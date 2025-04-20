@@ -204,9 +204,22 @@ static bool isShortenableAtTheEnd(Instruction *I) {
 /// Returns true if the beginning of this instruction can be safely shortened
 /// in length.
 static bool isShortenableAtTheBeginning(Instruction *I) {
-  // FIXME: Handle only memset for now. Supporting memcpy/memmove should be
-  // easily done by offsetting the source address.
-  return isa<AnyMemSetInst>(I);
+  if (auto *MSI = dyn_cast<AnyMemSetInst>(I))
+    return true;
+    
+  if (auto *MT = dyn_cast<AnyMemTransferInst>(I)) {
+    // For memcpy/memmove, we need to ensure we can safely offset both 
+    // source and destination pointers
+    if (isa<MemMoveInst>(MT))
+      return true; // memmove handles overlapping addresses correctly
+      
+    if (auto *MC = dyn_cast<MemCpyInst>(MT)) {
+      // For memcpy, only shorten if source and dest don't overlap
+      return MC->isNoOverlap(); 
+    }
+  }
+
+  return false;
 }
 
 static std::optional<TypeSize> getPointerSize(const Value *V,
@@ -622,7 +635,7 @@ static bool tryToShorten(Instruction *DeadI, int64_t &DeadStart,
   auto *DeadIntrinsic = cast<AnyMemIntrinsic>(DeadI);
   Align PrefAlign = DeadIntrinsic->getDestAlign().valueOrOne();
 
-  // We assume that memet/memcpy operates in chunks of the "largest" native
+  // We assume that memset/memcpy operates in chunks of the "largest" native
   // type size and aligned on the same value. That means optimal start and size
   // of memset/memcpy should be modulo of preferred alignment of that type. That
   // is it there is no any sense in trying to reduce store size any further
@@ -692,12 +705,25 @@ static bool tryToShorten(Instruction *DeadI, int64_t &DeadStart,
   if (!IsOverwriteEnd) {
     Value *Indices[1] = {
         ConstantInt::get(DeadWriteLength->getType(), ToRemoveSize)};
+    
+    // Update destination pointer
     Instruction *NewDestGEP = GetElementPtrInst::CreateInBounds(
         Type::getInt8Ty(DeadIntrinsic->getContext()), OrigDest, Indices, "",
         DeadI->getIterator());
     NewDestGEP->setDebugLoc(DeadIntrinsic->getDebugLoc());
     DeadIntrinsic->setDest(NewDestGEP);
     adjustArgAttributes(DeadIntrinsic, 0, ToRemoveSize);
+
+    // If this is a memcpy/memmove, also update the source pointer
+    if (auto *MT = dyn_cast<AnyMemTransferInst>(DeadIntrinsic)) {
+      Value *OrigSrc = MT->getRawSource();
+      Instruction *NewSrcGEP = GetElementPtrInst::CreateInBounds(
+          Type::getInt8Ty(DeadIntrinsic->getContext()), OrigSrc, Indices, "",
+          DeadI->getIterator());
+      NewSrcGEP->setDebugLoc(DeadIntrinsic->getDebugLoc());
+      MT->setSource(NewSrcGEP);
+      adjustArgAttributes(DeadIntrinsic, 1, ToRemoveSize); // Adjust source attributes
+    }
   }
 
   // Update attached dbg.assign intrinsics. Assume 8-bit byte.
