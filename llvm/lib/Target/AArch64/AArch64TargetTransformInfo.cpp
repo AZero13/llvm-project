@@ -3970,6 +3970,22 @@ InstructionCost AArch64TTIImpl::getArithmeticInstrCost(
     add + cmp + csel + asr        | Y                      | i32
     -----------------------------------------------------------------------
 
+    sdiv exact specific cases (pow-of-2):
+    -----------------------------------------------------------------------
+    codegen                       | pow-of-2               | Type
+    -----------------------------------------------------------------------
+    asr                           | Y                      | i64
+    asr                           | Y                      | i32
+    -----------------------------------------------------------------------
+
+    sdiv exact specific cases (non-pow-of-2):
+    -----------------------------------------------------------------------
+    codegen                       | pow-of-2               | Type
+    -----------------------------------------------------------------------
+    mul + asr                     | N                      | i64
+    mul + asr                     | N                      | i32
+    -----------------------------------------------------------------------
+
     srem specific cases:
     -----------------------------------------------------------------------
     codegen                       | pow-of-2               | Type
@@ -3991,6 +4007,12 @@ InstructionCost AArch64TTIImpl::getArithmeticInstrCost(
            + sshr  + usra     |            |            |           |
     -------------------------------------------------------------------------
     */
+
+    if (Op2Info.isConstant() && CxtI->isExact() &&
+        (Op2Info.isPowerOf2() || Op2Info.isNegatedPowerOf2()))
+      return getArithmeticInstrCost(Instruction::AShr, Ty, CostKind,
+                                    Op1Info.getNoProps(), Op2Info.getNoProps());
+
     if (Op2Info.isConstant() && Op2Info.isUniform()) {
       InstructionCost AddCost =
           getArithmeticInstrCost(Instruction::Add, Ty, CostKind,
@@ -4005,15 +4027,17 @@ InstructionCost AArch64TTIImpl::getArithmeticInstrCost(
       // have similar cost.
       auto VT = TLI->getValueType(DL, Ty);
       if (VT.isScalarInteger() && VT.getSizeInBits() <= 64) {
-        if (Op2Info.isPowerOf2()) {
+        if (Op2Info.isPowerOf2() || Op2Info.isNegatedPowerOf2()) {
           return ISD == ISD::SDIV ? (3 * AddCost + AsrCost)
                                   : (3 * AsrCost + AddCost);
         } else {
+          if (CxtI->isExact())
+            return MulCost + AsrCost;
           return MulCost + AsrCost + 2 * AddCost;
         }
       } else if (VT.isVector()) {
         InstructionCost UsraCost = 2 * AsrCost;
-        if (Op2Info.isPowerOf2()) {
+        if (Op2Info.isPowerOf2() || Op2Info.isNegatedPowerOf2()) {
           // Division with scalable types corresponds to native 'asrd'
           // instruction when SVE is available.
           // e.g. %1 = sdiv <vscale x 4 x i32> %a, splat (i32 8)
@@ -4032,8 +4056,11 @@ InstructionCost AArch64TTIImpl::getArithmeticInstrCost(
         } else {
           // When SVE is available, we get:
           // smulh + lsr + add/sub + asr + add/sub.
-          if (Ty->isScalableTy() && ST->hasSVE())
+          if (Ty->isScalableTy() && ST->hasSVE()) {
+            if (CxtI->isExact())
+              return MulCost;
             return MulCost /*smulh cost*/ + 2 * AddCost + 2 * AsrCost;
+          }
           return 2 * MulCost + AddCost /*uzp2 cost*/ + AsrCost + UsraCost;
         }
       }
