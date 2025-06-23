@@ -2004,6 +2004,12 @@ static Value *simplifyAndCommutative(Value *Op0, Value *Op1,
       isKnownToBeAPowerOfTwo(Op1, Q.DL, /*OrZero*/ true, Q.AC, Q.CxtI, Q.DT))
     return Constant::getNullValue(Op1->getType());
 
+  // This is a similar pattern used for checking if a value is a power-of-2:
+  // (A - 1) & -A --> 0
+  if (match(Op0,
+            m_Add(m_Value(X), m_AllOnes()) && match(Op1, m_Neg(m_Specific(X)))))
+    return Constant::getNullValue(Op1->getType());
+
   // (x << N) & ((x << M) - 1) --> 0, where x is known to be a power of 2 and
   // M <= N.
   const APInt *Shift1, *Shift2;
@@ -2222,7 +2228,11 @@ static Value *simplifyOrLogic(Value *X, Value *Y) {
   if (match(Y, m_c_And(m_Specific(X), m_Value())))
     return X;
 
+  // (A - 1) | -A --> -1
   Value *A, *B;
+  if (match(X,
+            m_Add(m_Value(A), m_AllOnes()) && match(Y, m_Neg(m_Specific(A)))))
+    return ConstantInt::getAllOnesValue(Ty);
 
   // (A ^ B) | (A | B) --> A | B
   // (A ^ B) | (B | A) --> B | A
@@ -2506,6 +2516,12 @@ static Value *simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q,
   if (match(Op0, m_Not(m_Specific(Op1))) || match(Op1, m_Not(m_Specific(Op0))))
     return Constant::getAllOnesValue(Op0->getType());
 
+  // (A - 1) | -A --> -1
+  Value *X;
+  if (match(Op0,
+            m_Add(m_Value(X), m_AllOnes()) && match(Y, m_Neg(m_Specific(X)))))
+    return ConstantInt::getAllOnesValue(Op0->getType());
+
   auto foldAndOrNot = [](Value *X, Value *Y) -> Value * {
     Value *A, *B;
     // (~A & B) ^ (A | B) --> A -- There are 8 commuted variants.
@@ -2550,12 +2566,9 @@ static Value *simplifyXorInst(Value *Op0, Value *Op1, const SimplifyQuery &Q,
     return V;
 
   // (xor (sub nuw C_Mask, X), C_Mask) -> X
-  {
-    Value *X;
-    if (match(Op0, m_NUWSub(m_Specific(Op1), m_Value(X))) &&
-        match(Op1, m_LowBitMask()))
-      return X;
-  }
+  if (match(Op0, m_NUWSub(m_Specific(Op1), m_Value(X))) &&
+      match(Op1, m_LowBitMask()))
+    return X;
 
   return nullptr;
 }
