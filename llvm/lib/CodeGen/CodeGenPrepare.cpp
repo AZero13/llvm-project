@@ -8675,6 +8675,20 @@ static bool optimizeBranch(BranchInst *Branch, const TargetLowering &TLI,
       replaceAllUsesWith(Cmp, NewCmp, FreshBBs, IsHugeFunc);
       return true;
     }
+
+    if (!Cmp->isUnsigned() &&
+        (match(UI, m_And(m_Specific(X), m_SpecificInt(CmpC))))) {
+      IRBuilder<> Builder(Branch);
+      if (UI->getParent() != Branch->getParent())
+        UI->moveBefore(Branch->getIterator());
+      UI->dropPoisonGeneratingFlags();
+      Value *NewCmp = Builder.CreateCmp(Cmp->getPredicate(), UI,
+                                        ConstantInt::get(UI->getType(), 0));
+      LLVM_DEBUG(dbgs() << "Converting " << *Cmp << "\n");
+      LLVM_DEBUG(dbgs() << " to compare on zero: " << *NewCmp << "\n");
+      replaceAllUsesWith(Cmp, NewCmp, FreshBBs, IsHugeFunc);
+      return true;
+    }
   }
   return false;
 }
