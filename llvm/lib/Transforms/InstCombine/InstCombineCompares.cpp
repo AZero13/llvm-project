@@ -6567,7 +6567,7 @@ static Instruction *processUZExtIdiom(ICmpInst &I, Value *Val,
   auto *LHS = cast<ZExtInst>(Instr->getOperand(0)),
        *RHS = cast<ZExtInst>(Instr->getOperand(1));
   assert(LHS->getOpcode() == Instruction::ZExt);
-  assert(RHS->getOpcode() == Instruction::ZExt);
+  assert(RHS->getOpcode() == Instruction::ZExt || isa<ConstantInt>(RHS));
   Value *A = LHS->getOperand(0), *B = RHS->getOperand(0);
 
   // Calculate type and width of the result produced by add/mul.with.overflow.
@@ -6651,7 +6651,7 @@ static Instruction *processUZExtIdiom(ICmpInst &I, Value *Val,
     if (!MaxPlusOne.eq(*OtherVal))
       return nullptr;
     // Check that the RHS operand is constant 1 (canonicalized)
-    auto *ConstOp = dyn_cast<ConstantInt>(ResultB);
+    auto *ConstOp = dyn_cast<ConstantInt>(B);
     if (!ConstOp || !ConstOp->isOne())
       return nullptr;
     break; // Recognized
@@ -6667,7 +6667,7 @@ static Instruction *processUZExtIdiom(ICmpInst &I, Value *Val,
     if (!MaxPlusOne.eq(*OtherVal))
       return nullptr;
     // Check that the RHS operand is constant 1 (canonicalized)
-    auto *ConstOp = dyn_cast<ConstantInt>(ResultB);
+    auto *ConstOp = dyn_cast<ConstantInt>(B);
     if (!ConstOp || !ConstOp->isOne())
       return nullptr;
     break; // Recognized
@@ -6696,12 +6696,12 @@ static Instruction *processUZExtIdiom(ICmpInst &I, Value *Val,
     // Overflow if result < either operand (for unsigned add)
     if (I.getPredicate() == ICmpInst::ICMP_EQ) {
       // For ICMP_EQ with max+1, check if ArithResult == -1 (overflow exactly once)
-      OverflowCheck = Builder.CreateICmpEQ(ArithResult, 
-          ConstantInt::getAllOnesValue(ArithResult->getType()), "add.overflow");
+      OverflowCheck = Builder.CreateICmpEQ(ResultA, 
+          ConstantInt::getAllOnesValue(ResultA->getType()), "add.overflow");
     } else if (I.getPredicate() == ICmpInst::ICMP_NE) {
       // For ICMP_NE with max+1, check if ArithResult != -1 (no overflow)
-      OverflowCheck = Builder.CreateICmpNE(ArithResult,
-          ConstantInt::getAllOnesValue(ArithResult->getType()), "not.add.overflow");
+      OverflowCheck = Builder.CreateICmpNE(ResultA,
+          ConstantInt::getAllOnesValue(ResultA->getType()), "not.add.overflow");
     } else if (I.getPredicate() == ICmpInst::ICMP_ULT) {
       OverflowCheck =
           Builder.CreateICmpUGE(ArithResult, ResultA, "not.add.overflow");
@@ -7895,6 +7895,15 @@ Instruction *InstCombinerImpl::visitICmpInst(ICmpInst &I) {
     // (zext X) * (zext Y)  --> llvm.umul.with.overflow.
     if ((match(Op0, m_NUWAdd(m_ZExt(m_Value(X)), m_ZExt(m_Value(Y)))) ||
          match(Op0, m_NUWMul(m_ZExt(m_Value(X)), m_ZExt(m_Value(Y))))) &&
+        match(Op1, m_APInt(C))) {
+      if (Instruction *R = processUZExtIdiom(I, Op0, C, *this))
+        return R;
+    }
+
+    // (zext X) + (C)  --> add + overflow check.
+    // (zext X) * (C)  --> llvm.umul.with.overflow.
+    if ((match(Op0, m_NUWAdd(m_ZExt(m_Value(X)), m_One())) ||
+         match(Op0, m_NUWMul(m_ZExt(m_Value(X)), m_One()))) &&
         match(Op1, m_APInt(C))) {
       if (Instruction *R = processUZExtIdiom(I, Op0, C, *this))
         return R;
