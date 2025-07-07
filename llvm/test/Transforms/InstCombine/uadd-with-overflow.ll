@@ -218,3 +218,133 @@ define i32 @uadd_with_zext_neg_use(i32 %x, i32 %y) {
 }
 
 declare void @usei64(i64)
+
+; Edge case: val == max + 1 (overflow exactly once)
+define i32 @uadd_with_zext_eq_max_plus_one(i32 %x) {
+; CHECK-LABEL: @uadd_with_zext_eq_max_plus_one(
+; CHECK-NEXT:    [[CMP:%.*]] = icmp eq i32 [[ADD:%.*]], -1
+; CHECK-NEXT:    [[COND:%.*]] = zext i1 [[CMP]] to i32
+; CHECK-NEXT:    ret i32 [[COND]]
+;
+  %conv = zext i32 %x to i64
+  %add = add i64 %conv, 1
+  %cmp = icmp eq i64 %add, 4294967296  ; 2^32 = UINT32_MAX + 1
+  %cond = zext i1 %cmp to i32
+  ret i32 %cond
+}
+
+; Edge case: val != max + 1 (not overflow exactly once)
+define i32 @uadd_with_zext_ne_max_plus_one(i32 %x) {
+; CHECK-LABEL: @uadd_with_zext_ne_max_plus_one(
+; CHECK-NEXT:    [[CMP:%.*]] = icmp ne i32 [[ADD:%.*]], -1
+; CHECK-NEXT:    [[COND:%.*]] = zext i1 [[CMP]] to i32
+; CHECK-NEXT:    ret i32 [[COND]]
+;
+  %conv = zext i32 %x to i64
+  %add = add i64 %conv, 1
+  %cmp = icmp ne i64 %add, 4294967296  ; 2^32 = UINT32_MAX + 1
+  %cond = zext i1 %cmp to i32
+  ret i32 %cond
+}
+
+; Edge case with different width: i16 to i32
+define i32 @uadd_with_zext_eq_max_plus_one_i16(i16 %x) {
+; CHECK-LABEL: @uadd_with_zext_eq_max_plus_one_i16(
+; CHECK-NEXT:    [[CMP:%.*]] = icmp eq i16 [[X:%.*]], -1
+; CHECK-NEXT:    [[COND:%.*]] = zext i1 [[CMP]] to i32
+; CHECK-NEXT:    ret i32 [[COND]]
+;
+  %conv = zext i16 %x to i32
+  %add = add i32 %conv, 1
+  %cmp = icmp eq i32 %add, 65536  ; 2^16 = UINT16_MAX + 1
+  %cond = zext i1 %cmp to i32
+  ret i32 %cond
+}
+
+; Edge case with different width: i16 to i32, ne variant
+define i32 @uadd_with_zext_ne_max_plus_one_i16(i16 %x) {
+; CHECK-LABEL: @uadd_with_zext_ne_max_plus_one_i16(
+; CHECK-NEXT:    [[CMP:%.*]] = icmp ne i16 [[X:%.*]], -1
+; CHECK-NEXT:    [[COND:%.*]] = zext i1 [[CMP]] to i32
+; CHECK-NEXT:    ret i32 [[COND]]
+;
+  %conv = zext i16 %x to i32
+  %add = add i32 %conv, 1
+  %cmp = icmp ne i32 %add, 65536  ; 2^16 = UINT16_MAX + 1
+  %cond = zext i1 %cmp to i32
+  ret i32 %cond
+}
+
+; Test multiplication with eq edge case
+define i32 @umul_with_zext_eq_max_plus_one(i32 %x, i32 %y) {
+; CHECK-LABEL: @umul_with_zext_eq_max_plus_one(
+; CHECK-NEXT:    [[CONV:%.*]] = zext i32 [[X:%.*]] to i64
+; CHECK-NEXT:    [[CONV1:%.*]] = zext i32 [[Y:%.*]] to i64
+; CHECK-NEXT:    [[MUL:%.*]] = mul nuw i64 [[CONV]], [[CONV1]]
+; CHECK-NEXT:    [[UMUL_OVERFLOW:%.*]] = icmp eq i64 [[MUL]], 4294967296
+; CHECK-NEXT:    [[COND:%.*]] = zext i1 [[UMUL_OVERFLOW]] to i32
+; CHECK-NEXT:    ret i32 [[COND]]
+;
+  %conv = zext i32 %x to i64
+  %conv1 = zext i32 %y to i64
+  %mul = mul i64 %conv, %conv1
+  %cmp = icmp eq i64 %mul, 4294967296  ; 2^32 = UINT32_MAX + 1
+  %cond = zext i1 %cmp to i32
+  ret i32 %cond
+}
+
+; Test multiplication with ne edge case
+define i32 @umul_with_zext_ne_max_plus_one(i32 %x, i32 %y) {
+; CHECK-LABEL: @umul_with_zext_ne_max_plus_one(
+; CHECK-NEXT:    [[CONV:%.*]] = zext i32 [[X:%.*]] to i64
+; CHECK-NEXT:    [[CONV1:%.*]] = zext i32 [[Y:%.*]] to i64
+; CHECK-NEXT:    [[MUL:%.*]] = mul nuw i64 [[CONV]], [[CONV1]]
+; CHECK-NEXT:    [[TMP1:%.*]] = icmp ne i64 [[MUL]], 4294967296
+; CHECK-NEXT:    [[COND:%.*]] = zext i1 [[TMP1]] to i32
+; CHECK-NEXT:    ret i32 [[COND]]
+;
+  %conv = zext i32 %x to i64
+  %conv1 = zext i32 %y to i64
+  %mul = mul i64 %conv, %conv1
+  %cmp = icmp ne i64 %mul, 4294967296  ; 2^32 = UINT32_MAX + 1
+  %cond = zext i1 %cmp to i32
+  ret i32 %cond
+}
+
+; Test with uses - should still transform when usage pattern allows
+define i32 @uadd_with_zext_eq_max_plus_one_with_and_use(i32 %x) {
+; CHECK-LABEL: @uadd_with_zext_eq_max_plus_one_with_and_use(
+; CHECK-NEXT:    [[CONV:%.*]] = zext i32 [[X:%.*]] to i64
+; CHECK-NEXT:    [[ADD:%.*]] = add nuw nsw i64 [[CONV]], 1
+; CHECK-NEXT:    [[AND:%.*]] = and i64 [[ADD]], 65535
+; CHECK-NEXT:    call void @usei64(i64 [[AND]])
+; CHECK-NEXT:    [[CMP:%.*]] = icmp eq i64 [[ADD]], 4294967296
+; CHECK-NEXT:    [[COND:%.*]] = zext i1 [[CMP]] to i32
+; CHECK-NEXT:    ret i32 [[COND]]
+;
+  %conv = zext i32 %x to i64
+  %add = add i64 %conv, 1
+  %and = and i64 %add, 65535
+  call void @usei64(i64 %and)
+  %cmp = icmp eq i64 %add, 4294967296  ; 2^32 = UINT32_MAX + 1
+  %cond = zext i1 %cmp to i32
+  ret i32 %cond
+}
+
+; Negative test: should not transform when additional use prevents it
+define i32 @uadd_with_zext_eq_max_plus_one_neg_use(i32 %x) {
+; CHECK-LABEL: @uadd_with_zext_eq_max_plus_one_neg_use(
+; CHECK-NEXT:    [[CONV:%.*]] = zext i32 [[X:%.*]] to i64
+; CHECK-NEXT:    [[ADD:%.*]] = add nuw nsw i64 [[CONV]], 1
+; CHECK-NEXT:    call void @usei64(i64 [[ADD]])
+; CHECK-NEXT:    [[CMP:%.*]] = icmp eq i64 [[ADD]], 4294967296
+; CHECK-NEXT:    [[COND:%.*]] = zext i1 [[CMP]] to i32
+; CHECK-NEXT:    ret i32 [[COND]]
+;
+  %conv = zext i32 %x to i64
+  %add = add i64 %conv, 1
+  call void @usei64(i64 %add)
+  %cmp = icmp eq i64 %add, 4294967296  ; 2^32 = UINT32_MAX + 1
+  %cond = zext i1 %cmp to i32
+  ret i32 %cond
+}
