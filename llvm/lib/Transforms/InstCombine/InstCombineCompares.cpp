@@ -6640,6 +6640,39 @@ static Instruction *processUZExtIdiom(ICmpInst &I, Value *Val,
     return nullptr;
   }
 
+  case ICmpInst::ICMP_EQ: {
+    // Only for add though;
+    if (Opcode != Instruction::Add)
+      return nullptr;
+    // Recognize pattern:
+    //   val = add(zext A, zext 1)
+    //   cmp eq val, max + 1
+    APInt MaxPlusOne = APInt::getOneBitSet(OtherVal->getBitWidth(), ResultWidth);
+    if (!MaxPlusOne.eq(*OtherVal))
+      return nullptr;
+    // Check that the RHS operand is constant 1 (canonicalized)
+    auto *ConstOp = dyn_cast<ConstantInt>(ResultB);
+    if (!ConstOp || !ConstOp->isOne())
+      return nullptr;
+    break; // Recognized
+  }
+
+  case ICmpInst::ICMP_NE: {
+    if (Opcode != Instruction::Add)
+      return nullptr;
+    // Recognize pattern:
+    //   val = add(zext A, zext 1)
+    //   cmp ne val, max + 1
+    APInt MaxPlusOne = APInt::getOneBitSet(OtherVal->getBitWidth(), ResultWidth);
+    if (!MaxPlusOne.eq(*OtherVal))
+      return nullptr;
+    // Check that the RHS operand is constant 1 (canonicalized)
+    auto *ConstOp = dyn_cast<ConstantInt>(ResultB);
+    if (!ConstOp || !ConstOp->isOne())
+      return nullptr;
+    break; // Recognized
+  }
+
   default:
     return nullptr;
   }
@@ -6661,12 +6694,21 @@ static Instruction *processUZExtIdiom(ICmpInst &I, Value *Val,
     // Canonical add overflow check: add + compare
     ArithResult = Builder.CreateAdd(ResultA, ResultB, "add");
     // Overflow if result < either operand (for unsigned add)
-    if (I.getPredicate() == ICmpInst::ICMP_ULT)
+    if (I.getPredicate() == ICmpInst::ICMP_EQ) {
+      // For ICMP_EQ with max+1, check if ArithResult == -1 (overflow exactly once)
+      OverflowCheck = Builder.CreateICmpEQ(ArithResult, 
+          ConstantInt::getAllOnesValue(ArithResult->getType()), "add.overflow");
+    } else if (I.getPredicate() == ICmpInst::ICMP_NE) {
+      // For ICMP_NE with max+1, check if ArithResult != -1 (no overflow)
+      OverflowCheck = Builder.CreateICmpNE(ArithResult,
+          ConstantInt::getAllOnesValue(ArithResult->getType()), "not.add.overflow");
+    } else if (I.getPredicate() == ICmpInst::ICMP_ULT) {
       OverflowCheck =
           Builder.CreateICmpUGE(ArithResult, ResultA, "not.add.overflow");
-    else
+    } else {
       OverflowCheck =
           Builder.CreateICmpULT(ArithResult, ResultA, "add.overflow");
+    }
   } else {
     // For multiplication, the intrinsic is actually the canonical form
     CallInst *Call = Builder.CreateIntrinsic(Intrinsic::umul_with_overflow,
