@@ -286,7 +286,7 @@ AArch64ConditionOptimizer::adjustCmp(MachineInstr *CmpMI,
 
   // If we change opcodes, this means we did an unsigned wrap, so return the old
   // cmp.
-  if (!isSigned && Opc != OldOpc)
+  if (!IsSigned && Opc != OldOpc)
     return CmpInfo(OldImm, OldOpc, Cmp);
 
   return CmpInfo(NewImm, Opc, getAdjustedCmp(Cmp));
