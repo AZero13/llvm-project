@@ -256,7 +256,7 @@ AArch64ConditionOptimizer::adjustCmp(MachineInstr *CmpMI,
   unsigned Opc = CmpMI->getOpcode();
   unsigned OldOpc = Opc;
 
-  bool isSigned = Cmp == AArch64CC::GT || Cmp == AArch64CC::GE ||
+  bool IsSigned = Cmp == AArch64CC::GT || Cmp == AArch64CC::GE ||
                   Cmp == AArch64CC::LT || Cmp == AArch64CC::LE;
 
   // CMN (compare with negative immediate) is an alias to ADDS (as
