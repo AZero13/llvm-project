@@ -1338,10 +1338,8 @@ bool AArch64InstrInfo::analyzeCompare(const MachineInstr &MI, Register &SrcReg,
     // instructions.
     SrcReg = MI.getOperand(1).getReg();
     SrcReg2 = 0;
-    CmpMask = ~0;
-    CmpValue = AArch64_AM::decodeLogicalImmediate(
-                   MI.getOperand(2).getImm(),
-                   MI.getOpcode() == AArch64::ANDSWri ? 32 : 64);
+    CmpMask = MI.getOperand(2).getImm();
+    CmpValue = 0;
     return true;
   }
 
