@@ -3989,6 +3989,18 @@ static SDValue getAArch64Cmp(SDValue LHS, SDValue RHS, ISD::CondCode CC,
   if (!Cmp) {
     Cmp = emitComparison(LHS, RHS, CC, DL, DAG);
     AArch64CC = changeIntCCToAArch64CC(CC);
+    if (isNullConstant(RHS)) {
+      switch (AArch64CC) {
+      default:
+        break;
+      case AArch64CC::GE:
+        AArch64CC = AArch64CC::PL;
+        break;
+      case AArch64CC::GE:
+        AArch64CC = AArch64CC::MI;
+        break;
+      }
+    }
   }
   AArch64cc = DAG.getConstant(AArch64CC, DL, MVT_CC);
   return Cmp;
