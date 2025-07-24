@@ -21598,6 +21598,17 @@ static SDValue performExtBinopLoadFold(SDNode *N, SelectionDAG &DAG) {
 
 static SDValue performAddSubCombine(SDNode *N,
                                     TargetLowering::DAGCombinerInfo &DCI) {
+  SDValue N0 = N->getOperand(0);
+  SDValue N1 = N->getOperand(1);
+
+  // Fold SUB(X,ADC(Y,0,W)) -> SBC(X,Y,W)
+  if (N1.getOpcode() == AArch64ISD::ADC && N1->hasOneUse() &&
+      isNullConstant(N1.getOperand(1))) {
+    assert(!N1->hasAnyUseOfValue(1) && "Overflow bit in use");
+    return DCI.DAG.getNode(AArch64ISD::SBC, SDLoc(N1), N1->getVTList(), N0,
+                       N1.getOperand(0), N1.getOperand(2));
+  }
+
   // Try to change sum of two reductions.
   if (SDValue Val = performAddUADDVCombine(N, DCI.DAG))
     return Val;

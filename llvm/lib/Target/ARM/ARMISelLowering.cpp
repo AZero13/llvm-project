@@ -14134,6 +14134,14 @@ static SDValue PerformSUBCombine(SDNode *N,
     if (SDValue Result = combineSelectAndUse(N, N1, N0, DCI))
       return Result;
 
+  // Fold SUB(X,ADC(Y,0,W)) -> SBC(X,Y,W)
+  if (N1.getOpcode() == ARMISD::ADDE && N1->hasOneUse() &&
+      isNullConstant(N1.getOperand(1))) {
+    assert(!N1->hasAnyUseOfValue(1) && "Overflow bit in use");
+    return DCI.DAG.getNode(ARMISD::SUBE, SDLoc(N1), N1->getVTList(), N0,
+                       N1.getOperand(0), N1.getOperand(2));
+  }
+
   if (SDValue R = PerformSubCSINCCombine(N, DCI.DAG))
     return R;
 
