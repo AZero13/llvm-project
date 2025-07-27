@@ -3841,14 +3841,26 @@ static unsigned getCmpOperandFoldingProfit(SDValue Op) {
 // with 0. Note that this only works for signed comparisons because of how ANDS
 // works.
 static bool shouldBeAdjustedToZero(SDValue LHS, APInt C, ISD::CondCode &CC) {
-  // Only works for ANDS and AND.
-  if (LHS.getOpcode() != ISD::AND && LHS.getOpcode() != AArch64ISD::ANDS)
+  // Only works for ANDS, AND, ADD, and SUB.
+  switch (LHS.getOpcode()) {
+  case ISD::AND:
+  case ISD::SUB:
+  case ISD::ADD:
+  case AArch64ISD::ANDS:
+  case AArch64ISD::SUBS:
+  case AArch64ISD::ADDS:
+    break;
+  default:
     return false;
+  }
 
   if (C.isOne() && (CC == ISD::SETLT || CC == ISD::SETGE)) {
     CC = (CC == ISD::SETLT) ? ISD::SETLE : ISD::SETGT;
     return true;
   }
+
+  if (LHS.getOpcode() != ISD::AND && LHS.getOpcode() != AArch64ISD::ANDS)
+    return false;
 
   if (C.isAllOnes() && (CC == ISD::SETLE || CC == ISD::SETGT)) {
     CC = (CC == ISD::SETLE) ? ISD::SETLT : ISD::SETGE;
