@@ -3753,6 +3753,138 @@ static bool canEmitConjunction(const SDValue Val, bool &CanNegate,
   return false;
 }
 
+// emitComparison() converts comparison with one or negative one to comparison
+// with 0. Note that this only works for signed comparisons because of how ANDS
+// works.
+static bool shouldBeAdjustedToZero(SDValue LHS, APInt C, ISD::CondCode &CC) {
+  // Only works for ANDS and AND.
+  if (LHS.getOpcode() != ISD::AND && LHS.getOpcode() != AArch64ISD::ANDS)
+    return false;
+
+  if (C.isOne() && (CC == ISD::SETLT || CC == ISD::SETGE)) {
+    CC = (CC == ISD::SETLT) ? ISD::SETLE : ISD::SETGT;
+    return true;
+  }
+
+  if (C.isAllOnes() && (CC == ISD::SETLE || CC == ISD::SETGT)) {
+    CC = (CC == ISD::SETLE) ? ISD::SETLT : ISD::SETGE;
+    return true;
+  }
+
+  return false;
+}
+
+static void adjustConstantsforComparison(SDValue &LHS, SDValue &RHS,
+                                         ISD::CondCode &CC, SelectionDAG &DAG,
+                                         const SDLoc &DL) {
+  if (ConstantSDNode *RHSC = dyn_cast<ConstantSDNode>(RHS.getNode())) {
+    EVT VT = RHS.getValueType();
+    APInt C = RHSC->getAPIntValue();
+    // shouldBeAdjustedToZero is a special case to better fold with
+    // emitComparison().
+    if (shouldBeAdjustedToZero(LHS, C, CC)) {
+      // Adjust the constant to zero.
+      // CC has already been adjusted.
+      RHS = DAG.getConstant(0, DL, VT);
+    } else if (!isLegalCmpImmed(C)) {
+      // Constant does not fit, try adjusting it by one?
+      switch (CC) {
+      default:
+        break;
+      case ISD::SETLT:
+      case ISD::SETGE:
+        if (!C.isMinSignedValue()) {
+          APInt CMinusOne = C - 1;
+          if (isLegalCmpImmed(CMinusOne)) {
+            CC = (CC == ISD::SETLT) ? ISD::SETLE : ISD::SETGT;
+            RHS = DAG.getConstant(CMinusOne, DL, VT);
+          }
+        }
+        break;
+      case ISD::SETULT:
+      case ISD::SETUGE:
+        if (!C.isZero()) {
+          APInt CMinusOne = C - 1;
+          if (isLegalCmpImmed(CMinusOne)) {
+            CC = (CC == ISD::SETULT) ? ISD::SETULE : ISD::SETUGT;
+            RHS = DAG.getConstant(CMinusOne, DL, VT);
+          }
+        }
+        break;
+      case ISD::SETLE:
+      case ISD::SETGT:
+        if (!C.isMaxSignedValue()) {
+          APInt CPlusOne = C + 1;
+          if (isLegalCmpImmed(CPlusOne)) {
+            CC = (CC == ISD::SETLE) ? ISD::SETLT : ISD::SETGE;
+            RHS = DAG.getConstant(CPlusOne, DL, VT);
+          }
+        }
+        break;
+      case ISD::SETULE:
+      case ISD::SETUGT:
+        if (!C.isAllOnes()) {
+          APInt CPlusOne = C + 1;
+          if (isLegalCmpImmed(CPlusOne)) {
+            CC = (CC == ISD::SETULE) ? ISD::SETULT : ISD::SETUGE;
+            RHS = DAG.getConstant(CPlusOne, DL, VT);
+          }
+        }
+        break;
+      }
+    }
+  }
+}
+
+static void adjustConstantsforConditionalComparison(SDValue &LHS, SDValue &RHS,
+                                                    ISD::CondCode &CC,
+                                                    SelectionDAG &DAG,
+                                                    const SDLoc &DL) {
+  if (ConstantSDNode *Imm = dyn_cast<ConstantSDNode>(RHS.getNode())) {
+    if (Imm->getZExtValue() == 32 && (CC == ISD::SETLT || CC == ISD::SETGE ||
+                                      CC == ISD::SETULT || CC == ISD::SETUGE)) {
+      RHS = DAG.getConstant(31, DL, Imm->getValueType(0));
+      switch (CC) {
+      case ISD::SETLT:
+        CC = ISD::SETLE;
+        break;
+      case ISD::SETGE:
+        CC = ISD::SETGT;
+        break;
+      case ISD::SETULT:
+        CC = ISD::SETULE;
+        break;
+      case ISD::SETUGE:
+        CC = ISD::SETUGT;
+        break;
+      default:
+        llvm_unreachable("Cannot adjust 32 to 31");
+      }
+    } else if (Imm->getSExtValue() == -32 &&
+               (CC == ISD::SETLE || CC == ISD::SETGT || CC == ISD::SETULE ||
+                CC == ISD::SETUGT)) {
+      APInt NegThirtyOne = Imm->getAPIntValue() + 1;
+      RHS = DAG.getConstant(NegThirtyOne, DL, Imm->getValueType(0));
+      switch (CC) {
+      case ISD::SETLE:
+        CC = ISD::SETLT;
+        break;
+      case ISD::SETGT:
+        CC = ISD::SETGE;
+        break;
+      case ISD::SETULE:
+        CC = ISD::SETULT;
+        break;
+      case ISD::SETUGT:
+        CC = ISD::SETUGE;
+        break;
+      default:
+        llvm_unreachable("Cannot adjust -32 to -31");
+      }
+    }
+  }
+}
+
 /// Emit conjunction or disjunction tree with the CMP/FCMP followed by a chain
 /// of CCMP/CFCMP ops. See @ref AArch64CCMP.
 /// Tries to transform the given i1 producing node @p Val to a series compare
@@ -3775,7 +3907,11 @@ static SDValue emitConjunctionRec(SelectionDAG &DAG, SDValue Val,
       CC = getSetCCInverse(CC, LHS.getValueType());
     SDLoc DL(Val);
     // Determine OutCC and handle FP special case.
-    if (isInteger) {
+    if (isInteger && !CCOp) {
+      adjustConstantsforComparison(LHS, RHS, CC, DAG, DL);
+      OutCC = changeIntCCToAArch64CC(CC);
+    } else if (isInteger && CCOp) {
+      adjustConstantsforConditionalComparison(LHS, RHS, CC, DAG, DL);
       OutCC = changeIntCCToAArch64CC(CC);
     } else {
       assert(LHS.getValueType().isFloatingPoint());
@@ -3921,87 +4057,11 @@ static unsigned getCmpOperandFoldingProfit(SDValue Op) {
   return 0;
 }
 
-// emitComparison() converts comparison with one or negative one to comparison
-// with 0. Note that this only works for signed comparisons because of how ANDS
-// works.
-static bool shouldBeAdjustedToZero(SDValue LHS, APInt C, ISD::CondCode &CC) {
-  // Only works for ANDS and AND.
-  if (LHS.getOpcode() != ISD::AND && LHS.getOpcode() != AArch64ISD::ANDS)
-    return false;
-
-  if (C.isOne() && (CC == ISD::SETLT || CC == ISD::SETGE)) {
-    CC = (CC == ISD::SETLT) ? ISD::SETLE : ISD::SETGT;
-    return true;
-  }
-
-  if (C.isAllOnes() && (CC == ISD::SETLE || CC == ISD::SETGT)) {
-    CC = (CC == ISD::SETLE) ? ISD::SETLT : ISD::SETGE;
-    return true;
-  }
-
-  return false;
-}
-
 static SDValue getAArch64Cmp(SDValue LHS, SDValue RHS, ISD::CondCode CC,
                              SDValue &AArch64cc, SelectionDAG &DAG,
                              const SDLoc &DL) {
-  if (ConstantSDNode *RHSC = dyn_cast<ConstantSDNode>(RHS.getNode())) {
-    EVT VT = RHS.getValueType();
-    APInt C = RHSC->getAPIntValue();
-    // shouldBeAdjustedToZero is a special case to better fold with
-    // emitComparison().
-    if (shouldBeAdjustedToZero(LHS, C, CC)) {
-      // Adjust the constant to zero.
-      // CC has already been adjusted.
-      RHS = DAG.getConstant(0, DL, VT);
-    } else if (!isLegalCmpImmed(C)) {
-      // Constant does not fit, try adjusting it by one?
-      switch (CC) {
-      default:
-        break;
-      case ISD::SETLT:
-      case ISD::SETGE:
-        if (!C.isMinSignedValue()) {
-          APInt CMinusOne = C - 1;
-          if (isLegalCmpImmed(CMinusOne)) {
-            CC = (CC == ISD::SETLT) ? ISD::SETLE : ISD::SETGT;
-            RHS = DAG.getConstant(CMinusOne, DL, VT);
-          }
-        }
-        break;
-      case ISD::SETULT:
-      case ISD::SETUGE:
-        if (!C.isZero()) {
-          APInt CMinusOne = C - 1;
-          if (isLegalCmpImmed(CMinusOne)) {
-            CC = (CC == ISD::SETULT) ? ISD::SETULE : ISD::SETUGT;
-            RHS = DAG.getConstant(CMinusOne, DL, VT);
-          }
-        }
-        break;
-      case ISD::SETLE:
-      case ISD::SETGT:
-        if (!C.isMaxSignedValue()) {
-          APInt CPlusOne = C + 1;
-          if (isLegalCmpImmed(CPlusOne)) {
-            CC = (CC == ISD::SETLE) ? ISD::SETLT : ISD::SETGE;
-            RHS = DAG.getConstant(CPlusOne, DL, VT);
-          }
-        }
-        break;
-      case ISD::SETULE:
-      case ISD::SETUGT:
-        if (!C.isAllOnes()) {
-          APInt CPlusOne = C + 1;
-          if (isLegalCmpImmed(CPlusOne)) {
-            CC = (CC == ISD::SETULE) ? ISD::SETULT : ISD::SETUGE;
-            RHS = DAG.getConstant(CPlusOne, DL, VT);
-          }
-        }
-        break;
-      }
-    }
-  }
+  
+  adjustConstantsforComparison(LHS, RHS, CC, DAG, DL);
 
   // Comparisons are canonicalized so that the RHS operand is simpler than the
   // LHS one, the extreme case being when RHS is an immediate. However, AArch64
