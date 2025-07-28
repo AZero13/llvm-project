@@ -5,10 +5,9 @@
 define i1 @ule_11111111(i32 noundef %in) {
 ; CHECK-SD-LABEL: ule_11111111:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #4370 // =0x1112
-; CHECK-SD-NEXT:    movk w8, #4369, lsl #16
+; CHECK-SD-NEXT:    mov w8, #286331153 // =0x11111111
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lo
+; CHECK-SD-NEXT:    cset w0, ls
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: ule_11111111:
@@ -24,10 +23,9 @@ define i1 @ule_11111111(i32 noundef %in) {
 define i1 @ule_22222222(i32 noundef %in) {
 ; CHECK-SD-LABEL: ule_22222222:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #8739 // =0x2223
-; CHECK-SD-NEXT:    movk w8, #8738, lsl #16
+; CHECK-SD-NEXT:    mov w8, #572662306 // =0x22222222
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lo
+; CHECK-SD-NEXT:    cset w0, ls
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: ule_22222222:
@@ -43,10 +41,9 @@ define i1 @ule_22222222(i32 noundef %in) {
 define i1 @ule_33333333(i32 noundef %in) {
 ; CHECK-SD-LABEL: ule_33333333:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #13108 // =0x3334
-; CHECK-SD-NEXT:    movk w8, #13107, lsl #16
+; CHECK-SD-NEXT:    mov w8, #858993459 // =0x33333333
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lo
+; CHECK-SD-NEXT:    cset w0, ls
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: ule_33333333:
@@ -62,10 +59,9 @@ define i1 @ule_33333333(i32 noundef %in) {
 define i1 @ule_44444444(i32 noundef %in) {
 ; CHECK-SD-LABEL: ule_44444444:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #17477 // =0x4445
-; CHECK-SD-NEXT:    movk w8, #17476, lsl #16
+; CHECK-SD-NEXT:    mov w8, #1145324612 // =0x44444444
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lo
+; CHECK-SD-NEXT:    cset w0, ls
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: ule_44444444:
@@ -81,10 +77,9 @@ define i1 @ule_44444444(i32 noundef %in) {
 define i1 @ule_55555555(i32 noundef %in) {
 ; CHECK-SD-LABEL: ule_55555555:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #21846 // =0x5556
-; CHECK-SD-NEXT:    movk w8, #21845, lsl #16
+; CHECK-SD-NEXT:    mov w8, #1431655765 // =0x55555555
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lo
+; CHECK-SD-NEXT:    cset w0, ls
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: ule_55555555:
@@ -100,10 +95,9 @@ define i1 @ule_55555555(i32 noundef %in) {
 define i1 @ule_66666666(i32 noundef %in) {
 ; CHECK-SD-LABEL: ule_66666666:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #26215 // =0x6667
-; CHECK-SD-NEXT:    movk w8, #26214, lsl #16
+; CHECK-SD-NEXT:    mov w8, #1717986918 // =0x66666666
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lo
+; CHECK-SD-NEXT:    cset w0, ls
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: ule_66666666:
@@ -119,10 +113,9 @@ define i1 @ule_66666666(i32 noundef %in) {
 define i1 @ule_77777777(i32 noundef %in) {
 ; CHECK-SD-LABEL: ule_77777777:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #30584 // =0x7778
-; CHECK-SD-NEXT:    movk w8, #30583, lsl #16
+; CHECK-SD-NEXT:    mov w8, #2004318071 // =0x77777777
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lo
+; CHECK-SD-NEXT:    cset w0, ls
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: ule_77777777:
@@ -138,10 +131,9 @@ define i1 @ule_77777777(i32 noundef %in) {
 define i1 @ule_88888888(i32 noundef %in) {
 ; CHECK-SD-LABEL: ule_88888888:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #34953 // =0x8889
-; CHECK-SD-NEXT:    movk w8, #34952, lsl #16
+; CHECK-SD-NEXT:    mov w8, #-2004318072 // =0x88888888
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lo
+; CHECK-SD-NEXT:    cset w0, ls
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: ule_88888888:
@@ -157,10 +149,9 @@ define i1 @ule_88888888(i32 noundef %in) {
 define i1 @ule_99999999(i32 noundef %in) {
 ; CHECK-SD-LABEL: ule_99999999:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #39322 // =0x999a
-; CHECK-SD-NEXT:    movk w8, #39321, lsl #16
+; CHECK-SD-NEXT:    mov w8, #-1717986919 // =0x99999999
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lo
+; CHECK-SD-NEXT:    cset w0, ls
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: ule_99999999:
@@ -176,10 +167,9 @@ define i1 @ule_99999999(i32 noundef %in) {
 define i1 @uge_11111111(i32 noundef %in) {
 ; CHECK-SD-LABEL: uge_11111111:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #4368 // =0x1110
-; CHECK-SD-NEXT:    movk w8, #4369, lsl #16
+; CHECK-SD-NEXT:    mov w8, #286331153 // =0x11111111
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, hi
+; CHECK-SD-NEXT:    cset w0, hs
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: uge_11111111:
@@ -195,10 +185,9 @@ define i1 @uge_11111111(i32 noundef %in) {
 define i1 @uge_22222222(i32 noundef %in) {
 ; CHECK-SD-LABEL: uge_22222222:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #8737 // =0x2221
-; CHECK-SD-NEXT:    movk w8, #8738, lsl #16
+; CHECK-SD-NEXT:    mov w8, #572662306 // =0x22222222
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, hi
+; CHECK-SD-NEXT:    cset w0, hs
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: uge_22222222:
@@ -214,10 +203,9 @@ define i1 @uge_22222222(i32 noundef %in) {
 define i1 @uge_33333333(i32 noundef %in) {
 ; CHECK-SD-LABEL: uge_33333333:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #13106 // =0x3332
-; CHECK-SD-NEXT:    movk w8, #13107, lsl #16
+; CHECK-SD-NEXT:    mov w8, #858993459 // =0x33333333
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, hi
+; CHECK-SD-NEXT:    cset w0, hs
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: uge_33333333:
@@ -233,10 +221,9 @@ define i1 @uge_33333333(i32 noundef %in) {
 define i1 @uge_44444444(i32 noundef %in) {
 ; CHECK-SD-LABEL: uge_44444444:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #17475 // =0x4443
-; CHECK-SD-NEXT:    movk w8, #17476, lsl #16
+; CHECK-SD-NEXT:    mov w8, #1145324612 // =0x44444444
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, hi
+; CHECK-SD-NEXT:    cset w0, hs
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: uge_44444444:
@@ -252,10 +239,9 @@ define i1 @uge_44444444(i32 noundef %in) {
 define i1 @uge_55555555(i32 noundef %in) {
 ; CHECK-SD-LABEL: uge_55555555:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #21844 // =0x5554
-; CHECK-SD-NEXT:    movk w8, #21845, lsl #16
+; CHECK-SD-NEXT:    mov w8, #1431655765 // =0x55555555
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, hi
+; CHECK-SD-NEXT:    cset w0, hs
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: uge_55555555:
@@ -271,10 +257,9 @@ define i1 @uge_55555555(i32 noundef %in) {
 define i1 @uge_66666666(i32 noundef %in) {
 ; CHECK-SD-LABEL: uge_66666666:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #26213 // =0x6665
-; CHECK-SD-NEXT:    movk w8, #26214, lsl #16
+; CHECK-SD-NEXT:    mov w8, #1717986918 // =0x66666666
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, hi
+; CHECK-SD-NEXT:    cset w0, hs
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: uge_66666666:
@@ -290,10 +275,9 @@ define i1 @uge_66666666(i32 noundef %in) {
 define i1 @uge_77777777(i32 noundef %in) {
 ; CHECK-SD-LABEL: uge_77777777:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #30582 // =0x7776
-; CHECK-SD-NEXT:    movk w8, #30583, lsl #16
+; CHECK-SD-NEXT:    mov w8, #2004318071 // =0x77777777
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, hi
+; CHECK-SD-NEXT:    cset w0, hs
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: uge_77777777:
@@ -309,10 +293,9 @@ define i1 @uge_77777777(i32 noundef %in) {
 define i1 @uge_88888888(i32 noundef %in) {
 ; CHECK-SD-LABEL: uge_88888888:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #34951 // =0x8887
-; CHECK-SD-NEXT:    movk w8, #34952, lsl #16
+; CHECK-SD-NEXT:    mov w8, #-2004318072 // =0x88888888
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, hi
+; CHECK-SD-NEXT:    cset w0, hs
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: uge_88888888:
@@ -328,10 +311,9 @@ define i1 @uge_88888888(i32 noundef %in) {
 define i1 @uge_99999999(i32 noundef %in) {
 ; CHECK-SD-LABEL: uge_99999999:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #39320 // =0x9998
-; CHECK-SD-NEXT:    movk w8, #39321, lsl #16
+; CHECK-SD-NEXT:    mov w8, #-1717986919 // =0x99999999
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, hi
+; CHECK-SD-NEXT:    cset w0, hs
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: uge_99999999:
@@ -347,10 +329,9 @@ define i1 @uge_99999999(i32 noundef %in) {
 define i1 @sle_11111111(i32 noundef %in) {
 ; CHECK-SD-LABEL: sle_11111111:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #4370 // =0x1112
-; CHECK-SD-NEXT:    movk w8, #4369, lsl #16
+; CHECK-SD-NEXT:    mov w8, #286331153 // =0x11111111
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lt
+; CHECK-SD-NEXT:    cset w0, le
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sle_11111111:
@@ -366,10 +347,9 @@ define i1 @sle_11111111(i32 noundef %in) {
 define i1 @sle_22222222(i32 noundef %in) {
 ; CHECK-SD-LABEL: sle_22222222:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #8739 // =0x2223
-; CHECK-SD-NEXT:    movk w8, #8738, lsl #16
+; CHECK-SD-NEXT:    mov w8, #572662306 // =0x22222222
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lt
+; CHECK-SD-NEXT:    cset w0, le
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sle_22222222:
@@ -385,10 +365,9 @@ define i1 @sle_22222222(i32 noundef %in) {
 define i1 @sle_33333333(i32 noundef %in) {
 ; CHECK-SD-LABEL: sle_33333333:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #13108 // =0x3334
-; CHECK-SD-NEXT:    movk w8, #13107, lsl #16
+; CHECK-SD-NEXT:    mov w8, #858993459 // =0x33333333
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lt
+; CHECK-SD-NEXT:    cset w0, le
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sle_33333333:
@@ -404,10 +383,9 @@ define i1 @sle_33333333(i32 noundef %in) {
 define i1 @sle_44444444(i32 noundef %in) {
 ; CHECK-SD-LABEL: sle_44444444:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #17477 // =0x4445
-; CHECK-SD-NEXT:    movk w8, #17476, lsl #16
+; CHECK-SD-NEXT:    mov w8, #1145324612 // =0x44444444
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lt
+; CHECK-SD-NEXT:    cset w0, le
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sle_44444444:
@@ -423,10 +401,9 @@ define i1 @sle_44444444(i32 noundef %in) {
 define i1 @sle_55555555(i32 noundef %in) {
 ; CHECK-SD-LABEL: sle_55555555:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #21846 // =0x5556
-; CHECK-SD-NEXT:    movk w8, #21845, lsl #16
+; CHECK-SD-NEXT:    mov w8, #1431655765 // =0x55555555
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lt
+; CHECK-SD-NEXT:    cset w0, le
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sle_55555555:
@@ -442,10 +419,9 @@ define i1 @sle_55555555(i32 noundef %in) {
 define i1 @sle_66666666(i32 noundef %in) {
 ; CHECK-SD-LABEL: sle_66666666:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #26215 // =0x6667
-; CHECK-SD-NEXT:    movk w8, #26214, lsl #16
+; CHECK-SD-NEXT:    mov w8, #1717986918 // =0x66666666
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lt
+; CHECK-SD-NEXT:    cset w0, le
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sle_66666666:
@@ -461,10 +437,9 @@ define i1 @sle_66666666(i32 noundef %in) {
 define i1 @sle_77777777(i32 noundef %in) {
 ; CHECK-SD-LABEL: sle_77777777:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #30584 // =0x7778
-; CHECK-SD-NEXT:    movk w8, #30583, lsl #16
+; CHECK-SD-NEXT:    mov w8, #2004318071 // =0x77777777
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lt
+; CHECK-SD-NEXT:    cset w0, le
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sle_77777777:
@@ -480,10 +455,9 @@ define i1 @sle_77777777(i32 noundef %in) {
 define i1 @sle_88888888(i32 noundef %in) {
 ; CHECK-SD-LABEL: sle_88888888:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #34953 // =0x8889
-; CHECK-SD-NEXT:    movk w8, #34952, lsl #16
+; CHECK-SD-NEXT:    mov w8, #-2004318072 // =0x88888888
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lo
+; CHECK-SD-NEXT:    cset w0, ls
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sle_88888888:
@@ -499,10 +473,9 @@ define i1 @sle_88888888(i32 noundef %in) {
 define i1 @sle_99999999(i32 noundef %in) {
 ; CHECK-SD-LABEL: sle_99999999:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #39322 // =0x999a
-; CHECK-SD-NEXT:    movk w8, #39321, lsl #16
+; CHECK-SD-NEXT:    mov w8, #-1717986919 // =0x99999999
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, lo
+; CHECK-SD-NEXT:    cset w0, ls
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sle_99999999:
@@ -518,10 +491,9 @@ define i1 @sle_99999999(i32 noundef %in) {
 define i1 @sge_11111111(i32 noundef %in) {
 ; CHECK-SD-LABEL: sge_11111111:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #4368 // =0x1110
-; CHECK-SD-NEXT:    movk w8, #4369, lsl #16
+; CHECK-SD-NEXT:    mov w8, #286331153 // =0x11111111
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, gt
+; CHECK-SD-NEXT:    cset w0, ge
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sge_11111111:
@@ -537,10 +509,9 @@ define i1 @sge_11111111(i32 noundef %in) {
 define i1 @sge_22222222(i32 noundef %in) {
 ; CHECK-SD-LABEL: sge_22222222:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #8737 // =0x2221
-; CHECK-SD-NEXT:    movk w8, #8738, lsl #16
+; CHECK-SD-NEXT:    mov w8, #572662306 // =0x22222222
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, gt
+; CHECK-SD-NEXT:    cset w0, ge
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sge_22222222:
@@ -556,10 +527,9 @@ define i1 @sge_22222222(i32 noundef %in) {
 define i1 @sge_33333333(i32 noundef %in) {
 ; CHECK-SD-LABEL: sge_33333333:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #13106 // =0x3332
-; CHECK-SD-NEXT:    movk w8, #13107, lsl #16
+; CHECK-SD-NEXT:    mov w8, #858993459 // =0x33333333
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, gt
+; CHECK-SD-NEXT:    cset w0, ge
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sge_33333333:
@@ -575,10 +545,9 @@ define i1 @sge_33333333(i32 noundef %in) {
 define i1 @sge_44444444(i32 noundef %in) {
 ; CHECK-SD-LABEL: sge_44444444:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #17475 // =0x4443
-; CHECK-SD-NEXT:    movk w8, #17476, lsl #16
+; CHECK-SD-NEXT:    mov w8, #1145324612 // =0x44444444
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, gt
+; CHECK-SD-NEXT:    cset w0, ge
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sge_44444444:
@@ -594,10 +563,9 @@ define i1 @sge_44444444(i32 noundef %in) {
 define i1 @sge_55555555(i32 noundef %in) {
 ; CHECK-SD-LABEL: sge_55555555:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #21844 // =0x5554
-; CHECK-SD-NEXT:    movk w8, #21845, lsl #16
+; CHECK-SD-NEXT:    mov w8, #1431655765 // =0x55555555
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, gt
+; CHECK-SD-NEXT:    cset w0, ge
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sge_55555555:
@@ -613,10 +581,9 @@ define i1 @sge_55555555(i32 noundef %in) {
 define i1 @sge_66666666(i32 noundef %in) {
 ; CHECK-SD-LABEL: sge_66666666:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #26213 // =0x6665
-; CHECK-SD-NEXT:    movk w8, #26214, lsl #16
+; CHECK-SD-NEXT:    mov w8, #1717986918 // =0x66666666
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, gt
+; CHECK-SD-NEXT:    cset w0, ge
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sge_66666666:
@@ -632,10 +599,9 @@ define i1 @sge_66666666(i32 noundef %in) {
 define i1 @sge_77777777(i32 noundef %in) {
 ; CHECK-SD-LABEL: sge_77777777:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #30582 // =0x7776
-; CHECK-SD-NEXT:    movk w8, #30583, lsl #16
+; CHECK-SD-NEXT:    mov w8, #2004318071 // =0x77777777
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, gt
+; CHECK-SD-NEXT:    cset w0, ge
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sge_77777777:
@@ -651,10 +617,9 @@ define i1 @sge_77777777(i32 noundef %in) {
 define i1 @sge_88888888(i32 noundef %in) {
 ; CHECK-SD-LABEL: sge_88888888:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #34951 // =0x8887
-; CHECK-SD-NEXT:    movk w8, #34952, lsl #16
+; CHECK-SD-NEXT:    mov w8, #-2004318072 // =0x88888888
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, hi
+; CHECK-SD-NEXT:    cset w0, hs
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sge_88888888:
@@ -670,10 +635,9 @@ define i1 @sge_88888888(i32 noundef %in) {
 define i1 @sge_99999999(i32 noundef %in) {
 ; CHECK-SD-LABEL: sge_99999999:
 ; CHECK-SD:       // %bb.0:
-; CHECK-SD-NEXT:    mov w8, #39320 // =0x9998
-; CHECK-SD-NEXT:    movk w8, #39321, lsl #16
+; CHECK-SD-NEXT:    mov w8, #-1717986919 // =0x99999999
 ; CHECK-SD-NEXT:    cmp w0, w8
-; CHECK-SD-NEXT:    cset w0, hi
+; CHECK-SD-NEXT:    cset w0, hs
 ; CHECK-SD-NEXT:    ret
 ;
 ; CHECK-GI-LABEL: sge_99999999:
