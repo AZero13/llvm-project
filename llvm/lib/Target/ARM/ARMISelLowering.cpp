@@ -5206,8 +5206,8 @@ SDValue ARMTargetLowering::LowerSELECT(SDValue Op, SelectionDAG &DAG) const {
   bool OptimizeMul =
       (Opc == ISD::SMULO || Opc == ISD::UMULO) && !Subtarget->isThumb1Only();
   if (Cond.getResNo() == 1 && (Opc == ISD::SADDO || Opc == ISD::UADDO ||
-                               Opc == ISD::SSUBO || Opc == ISD::USUBO) ||
-      OptimizeMul) {
+                               Opc == ISD::SSUBO || Opc == ISD::USUBO ||
+      OptimizeMul)) {
     if (!isTypeLegal(Cond->getValueType(0)))
       return SDValue();
 
