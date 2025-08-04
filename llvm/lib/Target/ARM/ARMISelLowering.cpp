@@ -5203,10 +5203,11 @@ SDValue ARMTargetLowering::LowerSELECT(SDValue Op, SelectionDAG &DAG) const {
   SDValue SelectFalse = Op.getOperand(2);
   SDLoc dl(Op);
   unsigned Opc = Cond.getOpcode();
-
-  if (Cond.getResNo() == 1 &&
-      (Opc == ISD::SADDO || Opc == ISD::UADDO || Opc == ISD::SSUBO ||
-       Opc == ISD::USUBO)) {
+  bool OptimizeMul =
+      (Opc == ISD::SMULO || Opc == ISD::UMULO) && !Subtarget->isThumb1Only();
+  if (Cond.getResNo() == 1 && (Opc == ISD::SADDO || Opc == ISD::UADDO ||
+                               Opc == ISD::SSUBO || Opc == ISD::USUBO) ||
+      OptimizeMul) {
     if (!isTypeLegal(Cond->getValueType(0)))
       return SDValue();
 
