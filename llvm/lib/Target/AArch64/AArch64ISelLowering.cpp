@@ -27088,6 +27088,10 @@ SDValue AArch64TargetLowering::PerformDAGCombine(SDNode *N,
     return performTruncateCombine(N, DAG, DCI);
   case AArch64ISD::ANDS:
     return performFlagSettingCombine(N, DCI, ISD::AND);
+  case AArch64ISD::ADDS:
+    return performFlagSettingCombine(N, DCI, ISD::ADD);
+  case AArch64ISD::SUBS:
+    return performFlagSettingCombine(N, DCI, ISD::SUB);
   case AArch64ISD::ADC:
     if (auto R = foldOverflowCheck(N, DAG, /* IsAdd */ true))
       return R;
