@@ -3611,8 +3611,6 @@ static SDValue emitComparison(SDValue LHS, SDValue RHS, ISD::CondCode CC,
       const SDValue ANDSNode =
           DAG.getNode(AArch64ISD::ANDS, DL, DAG.getVTList(VT, FlagsVT),
                       LHS.getOperand(0), LHS.getOperand(1));
-      // Replace all users of (and X, Y) with newly generated (ands X, Y)
-      DAG.ReplaceAllUsesWith(LHS, ANDSNode);
       return ANDSNode.getValue(1);
     } else if (LHS.getOpcode() == AArch64ISD::ANDS) {
       // Use result of ANDS
@@ -25489,9 +25487,6 @@ static SDValue performCSELCombine(SDNode *N,
   // CSEL a, b, cc, SUBS(SUB(x,y), 0) -> CSEL a, b, cc, SUBS(x,y) if cc doesn't
   // use overflow flags, to avoid the comparison with zero. In case of success,
   // this also replaces the original SUB(x,y) with the newly created SUBS(x,y).
-  // NOTE: Perhaps in the future use performFlagSettingCombine to replace SUB
-  // nodes with their SUBS equivalent as is already done for other flag-setting
-  // operators, in which case doing the replacement here becomes redundant.
   if (Cond.getOpcode() == AArch64ISD::SUBS && Cond->hasNUsesOfValue(1, 1) &&
       isNullConstant(Cond.getOperand(1))) {
     SDValue Sub = Cond.getOperand(0);
@@ -25503,7 +25498,6 @@ static SDValue performCSELCombine(SDNode *N,
       SDLoc DL(N);
       SDValue Subs = DAG.getNode(AArch64ISD::SUBS, DL, Cond->getVTList(),
                                  Sub.getOperand(0), Sub.getOperand(1));
-      DCI.CombineTo(Sub.getNode(), Subs);
       DCI.CombineTo(Cond.getNode(), Subs, Subs.getValue(1));
       return SDValue(N, 0);
     }
