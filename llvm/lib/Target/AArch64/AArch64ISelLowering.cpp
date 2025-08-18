@@ -20881,6 +20881,20 @@ static SDValue performNegCSelCombine(SDNode *N, SelectionDAG &DAG) {
   if (!isNegatedInteger(N0) && !isNegatedInteger(N1))
     return SDValue();
 
+  // Only apply the transformation if the operands are properly related.
+  // This prevents incorrect transformations like CSEL(neg(x), y, cond, flags)
+  // where x != y.
+  bool N0IsNeg = isNegatedInteger(N0);
+  bool N1IsNeg = isNegatedInteger(N1);
+  
+  // For now, only allow the transformation if both operands are negations
+  // or if we can verify they're properly related. This is a conservative fix.
+  if (!N0IsNeg || !N1IsNeg) {
+    // If only one operand is a negation, be more careful
+    // For now, just disable the transformation in this case
+    return SDValue();
+  }
+
   SDValue N0N = getNegatedInteger(N0, DAG);
   SDValue N1N = getNegatedInteger(N1, DAG);
 
@@ -25669,6 +25683,7 @@ static SDValue performFlagSettingCombine(SDNode *N,
 
   // If the flag result isn't used, convert back to a generic opcode.
   if (!N->hasAnyUseOfValue(1)) {
+    dbgs() << "DEBUG: Flag result not used, converting back to " << GenericOpcode << "\n";
     SDValue Res = DCI.DAG.getNode(GenericOpcode, DL, VT, N->ops());
     return DCI.CombineTo(N, Res, SDValue(N, 1));
   }
@@ -27084,7 +27099,8 @@ SDValue AArch64TargetLowering::PerformDAGCombine(SDNode *N,
     return performFlagSettingCombine(N, DCI, ISD::AND);
   case AArch64ISD::ADDS:
     return performFlagSettingCombine(N, DCI, ISD::ADD);
-  case AArch64ISD::SUBS:
+    case AArch64ISD::SUBS:
+    dbgs() << "DEBUG: Processing AArch64ISD::SUBS node\n";
     return performFlagSettingCombine(N, DCI, ISD::SUB);
   case AArch64ISD::ADC:
     if (auto R = foldOverflowCheck(N, DAG, /* IsAdd */ true))

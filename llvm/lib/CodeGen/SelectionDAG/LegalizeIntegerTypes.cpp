@@ -3584,6 +3584,11 @@ void DAGTypeLegalizer::ExpandIntRes_MINMAX(SDNode *N,
   EVT CCT = getSetCCResultType(VT);
   SDValue Cond = DAG.getSetCC(DL, CCT, LHS, RHS, Pred);
   SDValue Result = DAG.getSelect(DL, VT, Cond, LHS, RHS);
+  
+
+  
+
+  
   SplitInteger(Result, Lo, Hi);
 }
 

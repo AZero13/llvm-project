@@ -9700,13 +9700,17 @@ SDValue TargetLowering::expandABS(SDNode *N, SelectionDAG &DAG,
                        DAG.getNode(ISD::SUB, dl, VT, Zero, Op));
   }
 
-  // 0 - abs(x) -> smin(x, sub(0,x))
+    // 0 - abs(x) -> smin(x, sub(0,x))
   if (IsNegative && isOperationLegal(ISD::SUB, VT) &&
       isOperationLegal(ISD::SMIN, VT)) {
     SDValue Zero = DAG.getConstant(0, dl, VT);
     Op = DAG.getFreeze(Op);
-    return DAG.getNode(ISD::SMIN, dl, VT, Op,
-                       DAG.getNode(ISD::SUB, dl, VT, Zero, Op));
+    SDValue Sub = DAG.getNode(ISD::SUB, dl, VT, Zero, Op);
+    SDValue SMin = DAG.getNode(ISD::SMIN, dl, VT, Op, Sub);
+    
+
+    
+    return SMin;
   }
 
   // Only expand vector types if we have the appropriate vector operations.
