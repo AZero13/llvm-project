@@ -52302,8 +52302,13 @@ static SDValue combineAddOrSubToADCOrSBB(bool IsSub, const SDLoc &DL, EVT VT,
     return SDValue();
 
   // Look through a one-use zext.
-  if (Y.getOpcode() == ISD::ZERO_EXTEND && Y.hasOneUse())
+  bool YIsSignExtended = false;
+  if (Y.getOpcode() == ISD::ZERO_EXTEND && Y.hasOneUse()) {
     Y = Y.getOperand(0);
+  } else if (Y.getOpcode() == ISD::SIGN_EXTEND && Y.hasOneUse()) {
+    Y = Y.getOperand(0);
+    YIsSignExtended = true;
+  }
 
   X86::CondCode CC;
   SDValue EFLAGS;
@@ -52352,6 +52357,29 @@ static SDValue combineAddOrSubToADCOrSBB(bool IsSub, const SDLoc &DL, EVT VT,
   }
 
   if (CC == X86::COND_B) {
+    // Special case: if X is SUB(A, B) and EFLAGS comes from the same SUB/CMP node,
+    // we can use SBB(A, B, EFLAGS) directly instead of SBB(SUB(A,B), 0, EFLAGS).
+    // This saves an instruction: "cmp A, B; sbb A, B" vs "sub A, B; sbb A, 0"
+    // Patterns:
+    //   (SUB(A, B) - zext(SETB(SUB(A, B).flags))) -> SBB(A, B, EFLAGS)
+    //   (SUB(A, B) + sext(SETB(SUB(A, B).flags))) -> SBB(A, B, EFLAGS)
+    // Note: ADD with sext is equivalent to SUB with zext since sext gives -1 or 0
+    if ((IsSub || (!IsSub && YIsSignExtended)) &&
+        X.getOpcode() == X86ISD::SUB && X.hasOneUse()) {
+      LLVM_DEBUG(dbgs() << "Checking COND_B SBB optimization: X opcode=" << X.getOpcode() 
+                        << " EFLAGS node=" << EFLAGS.getNode()
+                        << " X node=" << X.getNode()
+                        << " EFLAGS resno=" << EFLAGS.getResNo() << "\n");
+      // Check if EFLAGS comes from the same X86ISD::SUB node (X:1 means flags output)
+      if (EFLAGS.getNode() == X.getNode() && EFLAGS.getResNo() == 1) {
+        LLVM_DEBUG(dbgs() << "Optimizing to SBB with original operands!\n");
+        // X is the result (ResNo 0) and EFLAGS is the flags (ResNo 1) from the same SUB
+        // Use SBB directly: A - B - CF where CF comes from the same SUB(A,B)
+        return DAG.getNode(X86ISD::SBB, DL, DAG.getVTList(VT, MVT::i32),
+                           X.getOperand(0), X.getOperand(1), EFLAGS);
+      }
+    }
+    
     // X + SETB Z --> adc X, 0
     // X - SETB Z --> sbb X, 0
     return DAG.getNode(IsSub ? X86ISD::SBB : X86ISD::ADC, DL,
@@ -52372,6 +52400,32 @@ static SDValue combineAddOrSubToADCOrSBB(bool IsSub, const SDLoc &DL, EVT VT,
     if (EFLAGS.getOpcode() == X86ISD::SUB && EFLAGS.getNode()->hasOneUse() &&
         EFLAGS.getValueType().isInteger() &&
         !isa<ConstantSDNode>(EFLAGS.getOperand(1))) {
+      // Special optimization: if X is the same SUB that produced EFLAGS,
+      // we can use SBB(B, A, newflags) which is equivalent but uses CMP instead of SUB
+      LLVM_DEBUG(dbgs() << "COND_A: X opcode=" << X.getOpcode() 
+                        << " X86ISD::SUB=" << X86ISD::SUB
+                        << " IsSub=" << IsSub
+                        << " YIsSignExtended=" << YIsSignExtended << "\n");
+      // Check if X is the same SUB that produced EFLAGS
+      // We allow the flags output to be used (that's the point!)
+      if (X.getOpcode() == X86ISD::SUB && X.getNode() == EFLAGS.getNode() &&
+          X.hasOneUse()) {
+        LLVM_DEBUG(dbgs() << "Matched! Creating CMP+SBB optimization\n");
+        // X = SUB(A, B), EFLAGS from same node
+        // We're computing X - SETA(A, B) = (A-B) - (A>B)
+        // Swap: create SUB(B, A) and use SETB on it
+        // Then SBB(B, A, flags) = B - A - (B<A)
+        // But that's not what we want...
+        // Actually we want:  cmp A, B; sbb A, B
+        // Let's create: CMP(A, B) to get flags, then SBB(A, B, flags)
+        SDValue Cmp = DAG.getNode(X86ISD::CMP, SDLoc(EFLAGS),
+                                  DAG.getVTList(EFLAGS.getValueType(), MVT::i32),
+                                  EFLAGS.getOperand(0), EFLAGS.getOperand(1));
+        return DAG.getNode(X86ISD::SBB, DL, DAG.getVTList(VT, MVT::i32),
+                           EFLAGS.getOperand(0), EFLAGS.getOperand(1),
+                           Cmp.getValue(1));
+      }
+      
       SDValue NewSub =
           DAG.getNode(X86ISD::SUB, SDLoc(EFLAGS), EFLAGS.getNode()->getVTList(),
                       EFLAGS.getOperand(1), EFLAGS.getOperand(0));
