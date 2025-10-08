@@ -331,7 +331,7 @@ public:
                             bool MathUsed) const override {
     // Using overflow ops for overflow checks only should beneficial on
     // AArch64.
-    return TargetLowering::shouldFormOverflowOp(Opcode, VT, true);
+    return !isOperationExpand(Opcode, VT);
   }
 
   Value *emitLoadLinked(IRBuilderBase &Builder, Type *ValueTy, Value *Addr,

@@ -642,7 +642,7 @@ class VectorType;
     bool shouldFormOverflowOp(unsigned Opcode, EVT VT,
                               bool MathUsed) const override {
       // Using overflow ops for overflow checks only should beneficial on ARM.
-      return TargetLowering::shouldFormOverflowOp(Opcode, VT, true);
+      return !isOperationExpand(Opcode, VT);
     }
 
     bool shouldReassociateReduction(unsigned Opc, EVT VT) const override {
