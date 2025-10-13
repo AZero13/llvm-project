@@ -731,6 +731,13 @@ Thumb2SizeReduce::ReduceSpecial(MachineBasicBlock &MBB, MachineInstr *MI,
     // to Op1 instead.
     if (MI->getOperand(0).isKill())
       return ReduceToNarrow(MBB, MI, Entry, LiveCPSR, IsSelfLoop);
+    // If Op0 isn't killed but Op1 is, commute so the killed operand is Op0,
+    // then reduce. This preserves correctness since narrow EOR writes a dest.
+    if (MI->getOperand(1).isKill()) {
+      MachineInstr *CommutedMI = TII->commuteInstruction(*MI);
+      if (CommutedMI)
+        return ReduceToNarrow(MBB, MI, Entry, LiveCPSR, IsSelfLoop);
+    }
   }
   }
   return false;
