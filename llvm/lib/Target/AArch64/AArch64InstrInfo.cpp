@@ -1441,6 +1441,14 @@ static unsigned convertToNonFlagSettingOpc(const MachineInstr &MI) {
     return MIDefinesZeroReg ? AArch64::SUBSXrs : AArch64::SUBXrs;
   case AArch64::SUBSXrx:
     return AArch64::SUBXrx;
+  case AArch64::SBCSXr:
+    return AArch64::SBCXr;
+  case AArch64::SBCSWr:
+    return AArch64::SBCWr;
+  case AArch64::ADCSXr:
+    return AArch64::ADCXr;
+  case AArch64::ADCSWr:
+    return AArch64::ADCWr;
   }
 }
 
@@ -1743,6 +1751,10 @@ static unsigned sForm(MachineInstr &Instr) {
   case AArch64::SUBSWri:
   case AArch64::SUBSXrr:
   case AArch64::SUBSXri:
+  case AArch64::SBCSWr:
+  case AArch64::SBCSXr:
+  case AArch64::ADCSWr:
+  case AArch64::ADCSXr:
     return Instr.getOpcode();
 
   case AArch64::ADDWrr:
