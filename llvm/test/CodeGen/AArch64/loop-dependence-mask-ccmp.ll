@@ -19,32 +19,34 @@
 ; Assembly output would look identical for both, so we must check machine IR.
 
 define <1 x i1> @test_war_mask_ccmp(ptr %a, ptr %b) {
-; CHECK-LABEL: name: test_war_mask_ccmp
-; CHECK: bb.0.entry:
-; CHECK:   [[COPY1:%[0-9]+]]:gpr64 = COPY $x1
-; CHECK:   [[COPY:%[0-9]+]]:gpr64 = COPY $x0
-; CHECK:   [[SUBSXrr:%[0-9]+]]:gpr64common = SUBSXrr [[COPY1]], [[COPY]], implicit-def dead $nzcv
-; CHECK:   [[SUBSXri:%[0-9]+]]:gpr64 = SUBSXri [[SUBSXrr]], 0, 0, implicit-def $nzcv
-; CHECK:   CCMPXi [[SUBSXrr]], 0, 4, 13, implicit-def $nzcv, implicit $nzcv
-; CHECK:   [[CSINCWr:%[0-9]+]]:gpr32 = CSINCWr $wzr, $wzr, 1, implicit $nzcv
-; CHECK:   $w0 = COPY [[CSINCWr]]
-; CHECK:   RET_ReallyLR implicit $w0
+  ; CHECK-LABEL: name: test_war_mask_ccmp
+  ; CHECK: bb.0.entry:
+  ; CHECK-NEXT:   liveins: $x0, $x1
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   [[COPY:%[0-9]+]]:gpr64 = COPY $x1
+  ; CHECK-NEXT:   [[COPY1:%[0-9]+]]:gpr64 = COPY $x0
+  ; CHECK-NEXT:   [[SUBSXrr:%[0-9]+]]:gpr64common = SUBSXrr [[COPY]], [[COPY1]], implicit-def dead $nzcv
+  ; CHECK-NEXT:   [[ADDSXri:%[0-9]+]]:gpr64 = ADDSXri killed [[SUBSXrr]], 1, 0, implicit-def $nzcv
+  ; CHECK-NEXT:   [[CSINCWr:%[0-9]+]]:gpr32 = CSINCWr $wzr, $wzr, 13, implicit $nzcv
+  ; CHECK-NEXT:   $w0 = COPY [[CSINCWr]]
+  ; CHECK-NEXT:   RET_ReallyLR implicit $w0
 entry:
   %0 = call <1 x i1> @llvm.loop.dependence.war.mask.v1i1(ptr %a, ptr %b, i64 1)
   ret <1 x i1> %0
 }
 
 define <1 x i1> @test_raw_mask_ccmp(ptr %a, ptr %b) {
-; CHECK-LABEL: name: test_raw_mask_ccmp
-; CHECK: bb.0.entry:
-; CHECK:   [[COPY1:%[0-9]+]]:gpr64 = COPY $x1
-; CHECK:   [[COPY:%[0-9]+]]:gpr64 = COPY $x0
-; CHECK:   [[SUBSXrr:%[0-9]+]]:gpr64common = SUBSXrr [[COPY1]], [[COPY]], implicit-def dead $nzcv
-; CHECK:   [[SUBSXri:%[0-9]+]]:gpr64 = SUBSXri [[SUBSXrr]], 0, 0, implicit-def $nzcv
-; CHECK:   CCMPXi [[SUBSXrr]], 0, 4, 13, implicit-def $nzcv, implicit $nzcv
-; CHECK:   [[CSINCWr:%[0-9]+]]:gpr32 = CSINCWr $wzr, $wzr, 1, implicit $nzcv
-; CHECK:   $w0 = COPY [[CSINCWr]]
-; CHECK:   RET_ReallyLR implicit $w0
+  ; CHECK-LABEL: name: test_raw_mask_ccmp
+  ; CHECK: bb.0.entry:
+  ; CHECK-NEXT:   liveins: $x0, $x1
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   [[COPY:%[0-9]+]]:gpr64 = COPY $x1
+  ; CHECK-NEXT:   [[COPY1:%[0-9]+]]:gpr64 = COPY $x0
+  ; CHECK-NEXT:   [[SUBSXrr:%[0-9]+]]:gpr64common = SUBSXrr [[COPY]], [[COPY1]], implicit-def dead $nzcv
+  ; CHECK-NEXT:   [[ADDSXri:%[0-9]+]]:gpr64 = ADDSXri killed [[SUBSXrr]], 1, 0, implicit-def $nzcv
+  ; CHECK-NEXT:   [[CSINCWr:%[0-9]+]]:gpr32 = CSINCWr $wzr, $wzr, 13, implicit $nzcv
+  ; CHECK-NEXT:   $w0 = COPY [[CSINCWr]]
+  ; CHECK-NEXT:   RET_ReallyLR implicit $w0
 entry:
   %0 = call <1 x i1> @llvm.loop.dependence.raw.mask.v1i1(ptr %a, ptr %b, i64 1)
   ret <1 x i1> %0
