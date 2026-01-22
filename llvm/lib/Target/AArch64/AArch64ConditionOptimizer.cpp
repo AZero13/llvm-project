@@ -394,7 +394,14 @@ bool AArch64ConditionOptimizer::optimizeIntraBlock(MachineBasicBlock &MBB) {
     return false;
   }
 
-  if (FirstCmp->getOperand(1).getReg() != SecondCmp->getOperand(1).getReg()) {
+  // Ensure both compares use the same register, tracing through copies.
+  Register FirstReg = FirstCmp->getOperand(1).getReg();
+  Register SecondReg = SecondCmp->getOperand(1).getReg();
+  Register FirstCmpReg =
+      FirstReg.isVirtual() ? TRI->lookThruCopyLike(FirstReg, MRI) : FirstReg;
+  Register SecondCmpReg =
+      SecondReg.isVirtual() ? TRI->lookThruCopyLike(SecondReg, MRI) : SecondReg;
+  if (FirstCmpReg != SecondCmpReg) {
     LLVM_DEBUG(dbgs() << "CMPs compare different registers\n");
     return false;
   }
