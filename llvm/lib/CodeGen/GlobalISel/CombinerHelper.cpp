@@ -7676,8 +7676,120 @@ bool CombinerHelper::matchSelect(MachineInstr &MI, BuildFnTy &MatchInfo) const {
   if (tryFoldBoolSelectToLogic(Select, MatchInfo))
     return true;
 
+  if (matchFoldSelectToABD(MI, MatchInfo))
+    return true;
+
   return false;
 }
+
+/// Match select(cmp, sub(A,B), sub(B,A)) to G_ABDS or G_ABDU.
+///
+/// |A - B| can be computed as:
+///   select(A >= B, A - B, B - A)  [signed or unsigned]
+///   select(A - B >= 0, A - B, B - A)  [signed only]
+///
+/// We match these patterns and their predicate inversions.
+bool CombinerHelper::matchFoldSelectToABD(MachineInstr &MI,
+                                          BuildFnTy &MatchInfo) const {
+  Register DstReg = MI.getOperand(0).getReg();
+  Register Cond = MI.getOperand(1).getReg();
+  Register TrueVal = MI.getOperand(2).getReg();
+  Register FalseVal = MI.getOperand(3).getReg();
+
+  auto *ICmp = getOpcodeDef<GICmp>(Cond, MRI);
+  if (!ICmp)
+    return false;
+
+  // Extract sub operands from both select arms.
+  auto *TrueSub = getOpcodeDef<GSub>(TrueVal, MRI);
+  auto *FalseSub = getOpcodeDef<GSub>(FalseVal, MRI);
+  if (!TrueSub || !FalseSub)
+    return false;
+
+  Register SubLHS = TrueSub->getLHSReg();
+  Register SubRHS = TrueSub->getRHSReg();
+
+  // The subs must be swapped: TrueVal = SubLHS - SubRHS, FalseVal = SubRHS - SubLHS.
+  if (FalseSub->getLHSReg() != SubRHS || FalseSub->getRHSReg() != SubLHS)
+    return false;
+
+  CmpInst::Predicate Pred = ICmp->getCond();
+  Register CmpLHS = ICmp->getLHSReg();
+  Register CmpRHS = ICmp->getRHSReg();
+
+  // Determine which ABD opcode to use based on the comparison.
+  // We need: select(A >= B, A - B, B - A) or equivalent.
+  //
+  // There are several valid forms:
+  // 1. cmp(A, B) with predicate >= or >  => TrueVal should be A - B
+  // 2. cmp(B, A) with predicate <= or <  => TrueVal should be A - B (equivalent)
+  // 3. cmp(A - B, 0) with predicate >= or > => TrueVal should be A - B (signed only)
+  //
+  // If the predicate is inverted, we need TrueVal = B - A, which means we swap.
+
+  auto IsZero = [&](Register R) {
+    return mi_match(R, MRI, m_SpecificICstOrSplat(0));
+  };
+
+  // Check if the comparison implies "TrueVal is the non-negative result".
+  // Returns: 0 = no match, 1 = signed (G_ABDS), 2 = unsigned (G_ABDU).
+  auto CheckPattern = [&](Register CmpL, Register CmpR, CmpInst::Predicate P,
+                          bool TrueIsAMinusB) -> unsigned {
+    // Pattern: cmp(SubLHS, SubRHS) with P in {>=, >}
+    // If true, select SubLHS - SubRHS. So TrueIsAMinusB must be true.
+    if (CmpL == SubLHS && CmpR == SubRHS) {
+      if (P == CmpInst::ICMP_SGE || P == CmpInst::ICMP_SGT)
+        return TrueIsAMinusB ? TargetOpcode::G_ABDS : 0;
+      if (P == CmpInst::ICMP_UGE || P == CmpInst::ICMP_UGT)
+        return TrueIsAMinusB ? TargetOpcode::G_ABDU : 0;
+      if (P == CmpInst::ICMP_SLT || P == CmpInst::ICMP_SLE)
+        return !TrueIsAMinusB ? TargetOpcode::G_ABDS : 0;
+      if (P == CmpInst::ICMP_ULT || P == CmpInst::ICMP_ULE)
+        return !TrueIsAMinusB ? TargetOpcode::G_ABDU : 0;
+    }
+
+    // Pattern: cmp(SubRHS, SubLHS) - swapped operands, needs opposite predicate.
+    if (CmpL == SubRHS && CmpR == SubLHS) {
+      if (P == CmpInst::ICMP_SLE || P == CmpInst::ICMP_SLT)
+        return TrueIsAMinusB ? TargetOpcode::G_ABDS : 0;
+      if (P == CmpInst::ICMP_ULE || P == CmpInst::ICMP_ULT)
+        return TrueIsAMinusB ? TargetOpcode::G_ABDU : 0;
+      if (P == CmpInst::ICMP_SGE || P == CmpInst::ICMP_SGT)
+        return !TrueIsAMinusB ? TargetOpcode::G_ABDS : 0;
+      if (P == CmpInst::ICMP_UGE || P == CmpInst::ICMP_UGT)
+        return !TrueIsAMinusB ? TargetOpcode::G_ABDU : 0;
+    }
+
+    // Pattern: cmp(A - B, 0) - signed comparison of difference to zero.
+    if (CmpL == TrueVal && IsZero(CmpR)) {
+      if (P == CmpInst::ICMP_SGE || P == CmpInst::ICMP_SGT)
+        return TrueIsAMinusB ? TargetOpcode::G_ABDS : 0;
+      if (P == CmpInst::ICMP_SLT || P == CmpInst::ICMP_SLE)
+        return !TrueIsAMinusB ? TargetOpcode::G_ABDS : 0;
+    }
+
+    // Pattern: cmp(B - A, 0) - FalseVal compared to zero.
+    if (CmpL == FalseVal && IsZero(CmpR)) {
+      if (P == CmpInst::ICMP_SGE || P == CmpInst::ICMP_SGT)
+        return !TrueIsAMinusB ? TargetOpcode::G_ABDS : 0;
+      if (P == CmpInst::ICMP_SLT || P == CmpInst::ICMP_SLE)
+        return TrueIsAMinusB ? TargetOpcode::G_ABDS : 0;
+    }
+
+    return 0;
+  };
+
+  // TrueVal is A - B by construction.
+  unsigned Opc = CheckPattern(CmpLHS, CmpRHS, Pred, /*TrueIsAMinusB=*/true);
+  if (!Opc)
+    return false;
+
+  MatchInfo = [=](MachineIRBuilder &MIB) {
+    MIB.buildInstr(Opc, {DstReg}, {SubLHS, SubRHS});
+  };
+  return true;
+}
+
 
 /// Fold (icmp Pred1 V1, C1) && (icmp Pred2 V2, C2)
 /// or   (icmp Pred1 V1, C1) || (icmp Pred2 V2, C2)

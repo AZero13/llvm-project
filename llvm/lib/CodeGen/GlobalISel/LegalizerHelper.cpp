@@ -10251,7 +10251,7 @@ LegalizerHelper::lowerAbsDiffToSelect(MachineInstr &MI) {
   CmpInst::Predicate Pred = (MI.getOpcode() == TargetOpcode::G_ABDS)
                                 ? CmpInst::ICMP_SGT
                                 : CmpInst::ICMP_UGT;
-  auto ICmp = MIRBuilder.buildICmp(Pred, LLT::scalar(1), LHS, RHS);
+  auto ICmp = MIRBuilder.buildICmp(Pred, Ty.changeElementSize(1), LHS, RHS);
   MIRBuilder.buildSelect(DstReg, ICmp, LHSSub, RHSSub);
 
   MI.eraseFromParent();

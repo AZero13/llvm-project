@@ -603,6 +603,11 @@ public:
   void applyFoldBinOpIntoSelect(MachineInstr &MI,
                                 const unsigned &SelectOpNo) const;
 
+  /// Match (select (icmp sge (sub A, B), 0), (sub A, B), (sub B, A)) ->
+  /// (G_ABDS A, B)
+  /// Match (select (icmp uge A, B), (sub A, B), (sub B, A)) -> (G_ABDU A, B)
+  bool matchFoldSelectToABD(MachineInstr &MI, BuildFnTy &MatchInfo) const;
+
   bool matchCombineInsertVecElts(MachineInstr &MI,
                                  SmallVectorImpl<Register> &MatchInfo) const;
 
