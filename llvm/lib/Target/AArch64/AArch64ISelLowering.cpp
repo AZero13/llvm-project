@@ -23228,7 +23228,7 @@ static SDValue performSubWithBorrowCombine(SDNode *N, SelectionDAG &DAG) {
 
   SDLoc DL(N);
   SDValue N0 = N->getOperand(0);
-  if (N0->getOpcode() == ISD::SUB)
+  if (N0->getOpcode() == ISD::SUB && N0->hasOneUse())
     return DAG.getNode(AArch64ISD::SBC, DL, VT, N0.getOperand(0),
                        N0.getOperand(1), Flags);
   return DAG.getNode(AArch64ISD::SBC, DL, VT, N0, DAG.getConstant(0, DL, VT),

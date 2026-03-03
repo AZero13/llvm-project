@@ -287,7 +287,7 @@ define i32 @test_multiple_sub_uses(i32 %a, i32 %b, i32 %x, i32 %y) {
 ; CHECK-SD-NEXT:    sub w8, w2, w3
 ; CHECK-SD-NEXT:    cmp w0, w1
 ; CHECK-SD-NEXT:    mov w0, w8
-; CHECK-SD-NEXT:    sbc w19, w2, w3
+; CHECK-SD-NEXT:    sbc w19, w8, wzr
 ; CHECK-SD-NEXT:    bl use
 ; CHECK-SD-NEXT:    mov w0, w19
 ; CHECK-SD-NEXT:    ldp x30, x19, [sp], #16 // 16-byte Folded Reload
