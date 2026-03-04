@@ -22235,10 +22235,12 @@ static SDValue performSetccAddFolding(SDNode *Op, SelectionDAG &DAG) {
   EVT CmpVT = InfoAndKind.IsAArch64
                   ? InfoAndKind.Info.AArch64.Cmp->getOperand(0).getValueType()
                   : InfoAndKind.Info.Generic.Opnd0->getValueType();
-  if (CmpVT != MVT::i32 && CmpVT != MVT::i64 &&
-      CmpVT != MVT::f16 && CmpVT != MVT::bf16 &&
-      CmpVT != MVT::f32 && CmpVT != MVT::f64)
+  if (CmpVT.isInteger()) {
+    if (CmpVT != MVT::i32 && CmpVT != MVT::i64)
+      return SDValue();
+  } else if (!CmpVT.isFloatingPoint() || CmpVT == MVT::f128) {
     return SDValue();
+  }
 
   SDValue CCVal;
   SDValue Cmp;
