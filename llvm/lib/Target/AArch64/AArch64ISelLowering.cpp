@@ -22232,11 +22232,12 @@ static SDValue performSetccAddFolding(SDNode *Op, SelectionDAG &DAG) {
       return SDValue();
   }
 
-  // FIXME: This could be generatized to work for FP comparisons.
   EVT CmpVT = InfoAndKind.IsAArch64
                   ? InfoAndKind.Info.AArch64.Cmp->getOperand(0).getValueType()
                   : InfoAndKind.Info.Generic.Opnd0->getValueType();
-  if (CmpVT != MVT::i32 && CmpVT != MVT::i64)
+  if (CmpVT != MVT::i32 && CmpVT != MVT::i64 &&
+      CmpVT != MVT::f16 && CmpVT != MVT::bf16 &&
+      CmpVT != MVT::f32 && CmpVT != MVT::f64)
     return SDValue();
 
   SDValue CCVal;
@@ -22247,11 +22248,21 @@ static SDValue performSetccAddFolding(SDNode *Op, SelectionDAG &DAG) {
         AArch64CC::getInvertedCondCode(InfoAndKind.Info.AArch64.CC), DL,
         MVT::i32);
     Cmp = *InfoAndKind.Info.AArch64.Cmp;
-  } else
-    Cmp = getAArch64Cmp(
-        *InfoAndKind.Info.Generic.Opnd0, *InfoAndKind.Info.Generic.Opnd1,
-        ISD::getSetCCInverse(InfoAndKind.Info.Generic.CC, CmpVT), CCVal, DAG,
-        DL);
+  } else {
+    ISD::CondCode CC = ISD::getSetCCInverse(InfoAndKind.Info.Generic.CC, CmpVT);
+    if (CmpVT.isInteger()) {
+      Cmp = getAArch64Cmp(*InfoAndKind.Info.Generic.Opnd0,
+                          *InfoAndKind.Info.Generic.Opnd1, CC, CCVal, DAG, DL);
+    } else {
+      AArch64CC::CondCode CC1, CC2;
+      changeFPCCToAArch64CC(CC, CC1, CC2);
+      if (CC2 != AArch64CC::AL)
+        return SDValue();
+      CCVal = DAG.getConstant(CC1, DL, MVT::i32);
+      Cmp = emitComparison(*InfoAndKind.Info.Generic.Opnd0,
+                           *InfoAndKind.Info.Generic.Opnd1, CC, DL, DAG);
+    }
+  }
 
   EVT VT = Op->getValueType(0);
   LHS = DAG.getNode(ISD::ADD, DL, VT, RHS, DAG.getConstant(1, DL, VT));
