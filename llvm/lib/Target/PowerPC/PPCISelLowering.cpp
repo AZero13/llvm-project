@@ -591,6 +591,8 @@ PPCTargetLowering::PPCTargetLowering(const PPCTargetMachine &TM,
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i1, Expand);
 
   // Custom handling for PowerPC ucmp instruction
+  setOperationAction(ISD::SCMP, MVT::i32, !isPPC64 ? Custom : Expand);
+  setOperationAction(ISD::SCMP, MVT::i64, isPPC64 ? Custom : Expand);
   setOperationAction(ISD::UCMP, MVT::i32, Custom);
   setOperationAction(ISD::UCMP, MVT::i64, isPPC64 ? Custom : Expand);
 
@@ -12654,6 +12656,50 @@ SDValue PPCTargetLowering::LowerSADDO(SDValue Op, SelectionDAG &DAG) const {
   return DAG.getMergeValues({Sum, OverflowTrunc}, dl);
 }
 
+// Lower signed 3-way compare producing -1/0/1.
+SDValue PPCTargetLowering::LowerSCMP(SDValue Op, SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  SDValue A = Op.getOperand(0);
+  SDValue B = Op.getOperand(1);
+  EVT OpVT = A.getValueType();
+  EVT ResVT = Op.getValueType();
+
+  // This is going to tbe same as UCMP, but we toggle the sign bit of both
+  // first. Hence no freeze. Also, no worries about upper 32 bits of registers
+  // on PPC64, as this just ends up being worse if we sign extend and then
+  // toggle and then do the subtraction instead of just folding it the older
+  // way.
+
+  // To toggle, we xor with SIGNED INT_MIN
+
+  A = DAG.getNode(
+      ISD::XOR, DL, OpVT, A,
+      DAG.getConstant(APInt::getSignedMinValue(OpVT.getScalarSizeInBits()), DL,
+                      OpVT));
+  B = DAG.getNode(
+      ISD::XOR, DL, OpVT, B,
+      DAG.getConstant(APInt::getSignedMinValue(OpVT.getScalarSizeInBits()), DL,
+                      OpVT));
+
+  // First compute diff = A - B.
+  SDValue Diff = DAG.getNode(ISD::SUB, DL, OpVT, A, B);
+
+  // Generate B - A using SUBC to capture carry.
+  SDVTList VTs = DAG.getVTList(OpVT, MVT::i32);
+  SDValue SubC = DAG.getNode(PPCISD::SUBC, DL, VTs, B, A);
+  SDValue CA0 = SubC.getValue(1);
+
+  // t2 = A - B + CA0 using SUBE.
+  SDValue SubE1 = DAG.getNode(PPCISD::SUBE, DL, VTs, A, B, CA0);
+  SDValue CA1 = SubE1.getValue(1);
+
+  // res = diff - t2 + CA1 using SUBE (produces desired -1/0/1).
+  SDValue ResPair = DAG.getNode(PPCISD::SUBE, DL, VTs, Diff, SubE1, CA1);
+
+  // Extract the first result and truncate to result type if needed.
+  return DAG.getSExtOrTrunc(ResPair.getValue(0), DL, ResVT);
+}
+
 // Lower unsigned 3-way compare producing -1/0/1.
 SDValue PPCTargetLowering::LowerUCMP(SDValue Op, SelectionDAG &DAG) const {
   SDLoc DL(Op);
@@ -12797,6 +12843,8 @@ SDValue PPCTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::UADDO_CARRY:
   case ISD::USUBO_CARRY:
     return LowerADDSUBO_CARRY(Op, DAG);
+  case ISD::SCMP:
+    return LowerSCMP(Op, DAG);
   case ISD::UCMP:
     return LowerUCMP(Op, DAG);
   case ISD::STRICT_LRINT:

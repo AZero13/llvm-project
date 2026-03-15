@@ -113,14 +113,14 @@ define i32 @scmp_32_64(i64 %x, i64 %y) nounwind {
 define i64 @scmp_64_64(i64 %x, i64 %y) nounwind {
 ; CHECK-LABEL: scmp_64_64:
 ; CHECK:       # %bb.0:
-; CHECK-NEXT:    sradi 5, 4, 63
-; CHECK-NEXT:    rldicl 6, 3, 1, 63
-; CHECK-NEXT:    subc 7, 4, 3
-; CHECK-NEXT:    adde 5, 6, 5
-; CHECK-NEXT:    cmpd 3, 4
-; CHECK-NEXT:    li 3, -1
-; CHECK-NEXT:    xori 5, 5, 1
-; CHECK-NEXT:    isellt 3, 3, 5
+; CHECK-NEXT:    li 5, 1
+; CHECK-NEXT:    rldic 5, 5, 63, 0
+; CHECK-NEXT:    xor 3, 3, 5
+; CHECK-NEXT:    xor 4, 4, 5
+; CHECK-NEXT:    subc 6, 4, 3
+; CHECK-NEXT:    sub 5, 3, 4
+; CHECK-NEXT:    subfe 3, 4, 3
+; CHECK-NEXT:    subfe 3, 3, 5
 ; CHECK-NEXT:    blr
   %1 = call i64 @llvm.scmp(i64 %x, i64 %y)
   ret i64 %1
