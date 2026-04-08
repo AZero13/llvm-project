@@ -550,6 +550,16 @@ bool TargetLowering::ShrinkDemandedConstant(SDValue Op,
   if (DemandedBits.isZero() || DemandedElts.isZero())
     return false;
 
+  // XOR with a constant that has 1 on every demanded bit is a canonical
+  // inversion / 'not' style form—do not shrink it here, and do this before
+  // targetShrinkDemandedConstant so targets cannot rewrite it first.
+  if (Opcode == ISD::XOR) {
+    auto *XorC = dyn_cast<ConstantSDNode>(Op.getOperand(1));
+    if (XorC && !XorC->isOpaque() &&
+        DemandedBits.isSubsetOf(XorC->getAPIntValue()))
+      return false;
+  }
+
   // Do target-specific constant optimization.
   if (targetShrinkDemandedConstant(Op, DemandedBits, DemandedElts, TLO))
     return TLO.New.getNode();
@@ -565,11 +575,7 @@ bool TargetLowering::ShrinkDemandedConstant(SDValue Op,
     if (!Op1C || Op1C->isOpaque())
       return false;
 
-    // If this is a 'not' op, don't touch it because that's a canonical form.
     const APInt &C = Op1C->getAPIntValue();
-    if (Opcode == ISD::XOR && DemandedBits.isSubsetOf(C))
-      return false;
-
     if (!C.isSubsetOf(DemandedBits)) {
       EVT VT = Op.getValueType();
       SDValue NewC = TLO.DAG.getConstant(DemandedBits & C, DL, VT);
