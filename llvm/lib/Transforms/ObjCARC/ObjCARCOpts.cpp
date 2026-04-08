@@ -2489,6 +2489,197 @@ bool ObjCARCOpt::run(Function &F, AAResults &AA) {
 
 /// Interprocedurally determine if calls made by the given call site can
 /// possibly produce autoreleases.
+bool MayAutorelease(const CallBase &CB, unsigned Depth);
+
+/// Interprocedurally determine if calls made by the given call site can
+/// possibly produce autoreleases.
+enum class AutoreleasePoolState : uint8_t {
+  Outside,
+  Depth1Clean,
+  Depth1Dirty,
+  Depth2PlusClean,
+  Depth2PlusDirty
+};
+
+struct AutoreleasePoolStateSet {
+  bool Outside = false;
+  bool Depth1Clean = false;
+  bool Depth1Dirty = false;
+  bool Depth2PlusClean = false;
+  bool Depth2PlusDirty = false;
+
+  bool operator==(const AutoreleasePoolStateSet &RHS) const {
+    return Outside == RHS.Outside && Depth1Clean == RHS.Depth1Clean &&
+           Depth1Dirty == RHS.Depth1Dirty &&
+           Depth2PlusClean == RHS.Depth2PlusClean &&
+           Depth2PlusDirty == RHS.Depth2PlusDirty;
+  }
+
+  bool operator!=(const AutoreleasePoolStateSet &RHS) const {
+    return !(*this == RHS);
+  }
+
+  bool hasState(AutoreleasePoolState State) const {
+    switch (State) {
+    case AutoreleasePoolState::Outside:
+      return Outside;
+    case AutoreleasePoolState::Depth1Clean:
+      return Depth1Clean;
+    case AutoreleasePoolState::Depth1Dirty:
+      return Depth1Dirty;
+    case AutoreleasePoolState::Depth2PlusClean:
+      return Depth2PlusClean;
+    case AutoreleasePoolState::Depth2PlusDirty:
+      return Depth2PlusDirty;
+    }
+    llvm_unreachable("Unhandled autorelease pool state");
+  }
+
+  void addState(AutoreleasePoolState State) {
+    switch (State) {
+    case AutoreleasePoolState::Outside:
+      Outside = true;
+      return;
+    case AutoreleasePoolState::Depth1Clean:
+      Depth1Clean = true;
+      return;
+    case AutoreleasePoolState::Depth1Dirty:
+      Depth1Dirty = true;
+      return;
+    case AutoreleasePoolState::Depth2PlusClean:
+      Depth2PlusClean = true;
+      return;
+    case AutoreleasePoolState::Depth2PlusDirty:
+      Depth2PlusDirty = true;
+      return;
+    }
+    llvm_unreachable("Unhandled autorelease pool state");
+  }
+
+  void joinWith(const AutoreleasePoolStateSet &Other) {
+    Outside |= Other.Outside;
+    Depth1Clean |= Other.Depth1Clean;
+    Depth1Dirty |= Other.Depth1Dirty;
+    Depth2PlusClean |= Other.Depth2PlusClean;
+    Depth2PlusDirty |= Other.Depth2PlusDirty;
+  }
+};
+
+static AutoreleasePoolStateSet
+getInitialAutoreleasePoolStateSet(AutoreleasePoolState InitialState) {
+  AutoreleasePoolStateSet Set;
+  Set.addState(InitialState);
+  return Set;
+}
+
+static bool hasAutoreleaseAtFunctionScope(const AutoreleasePoolStateSet &Set) {
+  return Set.hasState(AutoreleasePoolState::Outside);
+}
+
+static bool hasUncontainedDirtyPoolState(const AutoreleasePoolStateSet &Set) {
+  return Set.hasState(AutoreleasePoolState::Depth1Dirty) ||
+         Set.hasState(AutoreleasePoolState::Depth2PlusDirty);
+}
+
+static bool transferMayAutoreleaseBlock(const BasicBlock &BB, unsigned Depth,
+                                        const AutoreleasePoolStateSet &InState,
+                                        AutoreleasePoolStateSet &OutState) {
+  AutoreleasePoolStateSet State = InState;
+  for (const Instruction &I : BB) {
+    ARCInstKind InstKind = GetBasicARCInstKind(&I);
+    switch (InstKind) {
+    case ARCInstKind::AutoreleasepoolPush: {
+      AutoreleasePoolStateSet NewState;
+      if (State.hasState(AutoreleasePoolState::Outside))
+        NewState.addState(AutoreleasePoolState::Depth1Clean);
+      if (State.hasState(AutoreleasePoolState::Depth1Clean))
+        NewState.addState(AutoreleasePoolState::Depth2PlusClean);
+      if (State.hasState(AutoreleasePoolState::Depth1Dirty))
+        NewState.addState(AutoreleasePoolState::Depth2PlusDirty);
+      if (State.hasState(AutoreleasePoolState::Depth2PlusClean))
+        NewState.addState(AutoreleasePoolState::Depth2PlusClean);
+      if (State.hasState(AutoreleasePoolState::Depth2PlusDirty))
+        NewState.addState(AutoreleasePoolState::Depth2PlusDirty);
+      State = NewState;
+      break;
+    }
+
+    case ARCInstKind::AutoreleasepoolPop: {
+      AutoreleasePoolStateSet NewState;
+      if (State.hasState(AutoreleasePoolState::Outside))
+        NewState.addState(AutoreleasePoolState::Outside);
+      if (State.hasState(AutoreleasePoolState::Depth1Clean))
+        NewState.addState(AutoreleasePoolState::Outside);
+      if (State.hasState(AutoreleasePoolState::Depth1Dirty))
+        NewState.addState(AutoreleasePoolState::Outside);
+      if (State.hasState(AutoreleasePoolState::Depth2PlusClean))
+        NewState.addState(AutoreleasePoolState::Depth1Clean);
+      if (State.hasState(AutoreleasePoolState::Depth2PlusDirty))
+        NewState.addState(AutoreleasePoolState::Depth1Dirty);
+      State = NewState;
+      break;
+    }
+
+    case ARCInstKind::Autorelease:
+    case ARCInstKind::AutoreleaseRV:
+    case ARCInstKind::FusedRetainAutorelease:
+    case ARCInstKind::FusedRetainAutoreleaseRV:
+    case ARCInstKind::LoadWeak:
+      // These may produce autoreleases
+      if (hasAutoreleaseAtFunctionScope(State))
+        return true;
+      if (State.hasState(AutoreleasePoolState::Depth1Clean))
+        State.addState(AutoreleasePoolState::Depth1Dirty);
+      if (State.hasState(AutoreleasePoolState::Depth2PlusClean))
+        State.addState(AutoreleasePoolState::Depth2PlusDirty);
+      State.Depth1Clean = false;
+      State.Depth2PlusClean = false;
+      break;
+
+    case ARCInstKind::Retain:
+    case ARCInstKind::RetainRV:
+    case ARCInstKind::UnsafeClaimRV:
+    case ARCInstKind::RetainBlock:
+    case ARCInstKind::Release:
+    case ARCInstKind::NoopCast:
+    case ARCInstKind::LoadWeakRetained:
+    case ARCInstKind::StoreWeak:
+    case ARCInstKind::InitWeak:
+    case ARCInstKind::MoveWeak:
+    case ARCInstKind::CopyWeak:
+    case ARCInstKind::DestroyWeak:
+    case ARCInstKind::StoreStrong:
+      // These ObjC runtime functions don't produce autoreleases
+      break;
+
+    case ARCInstKind::CallOrUser:
+    case ARCInstKind::Call:
+      // For non-ObjC function calls, recursively analyze.
+      if (MayAutorelease(cast<CallBase>(I), Depth + 1)) {
+        if (hasAutoreleaseAtFunctionScope(State))
+          return true;
+        if (State.hasState(AutoreleasePoolState::Depth1Clean))
+          State.addState(AutoreleasePoolState::Depth1Dirty);
+        if (State.hasState(AutoreleasePoolState::Depth2PlusClean))
+          State.addState(AutoreleasePoolState::Depth2PlusDirty);
+        State.Depth1Clean = false;
+        State.Depth2PlusClean = false;
+      }
+      break;
+
+    case ARCInstKind::IntrinsicUser:
+    case ARCInstKind::User:
+    case ARCInstKind::None:
+      // These are not relevant for autorelease analysis
+      break;
+    }
+  }
+  OutState = State;
+  return false;
+}
+
+/// Interprocedurally determine if calls made by the given call site can
+/// possibly produce autoreleases.
 bool MayAutorelease(const CallBase &CB, unsigned Depth = 0) {
   if (CB.onlyReadsMemory())
     return false;
@@ -2501,51 +2692,41 @@ bool MayAutorelease(const CallBase &CB, unsigned Depth = 0) {
   if (const Function *Callee = CB.getCalledFunction()) {
     if (!Callee->hasExactDefinition())
       return true;
-    for (const BasicBlock &BB : *Callee) {
-      for (const Instruction &I : BB) {
-        // TODO: Ignore all instructions between autorelease pools
-        ARCInstKind InstKind = GetBasicARCInstKind(&I);
-        switch (InstKind) {
-        case ARCInstKind::Autorelease:
-        case ARCInstKind::AutoreleaseRV:
-        case ARCInstKind::FusedRetainAutorelease:
-        case ARCInstKind::FusedRetainAutoreleaseRV:
-        case ARCInstKind::LoadWeak:
-          // These may produce autoreleases
-          return true;
-
-        case ARCInstKind::Retain:
-        case ARCInstKind::RetainRV:
-        case ARCInstKind::UnsafeClaimRV:
-        case ARCInstKind::RetainBlock:
-        case ARCInstKind::Release:
-        case ARCInstKind::NoopCast:
-        case ARCInstKind::LoadWeakRetained:
-        case ARCInstKind::StoreWeak:
-        case ARCInstKind::InitWeak:
-        case ARCInstKind::MoveWeak:
-        case ARCInstKind::CopyWeak:
-        case ARCInstKind::DestroyWeak:
-        case ARCInstKind::StoreStrong:
-        case ARCInstKind::AutoreleasepoolPush:
-        case ARCInstKind::AutoreleasepoolPop:
-          // These ObjC runtime functions don't produce autoreleases
-          break;
-
-        case ARCInstKind::CallOrUser:
-        case ARCInstKind::Call:
-          // For non-ObjC function calls, recursively analyze
-          if (MayAutorelease(cast<CallBase>(I), Depth + 1))
-            return true;
-          break;
-
-        case ARCInstKind::IntrinsicUser:
-        case ARCInstKind::User:
-        case ARCInstKind::None:
-          // These are not relevant for autorelease analysis
-          break;
+    DenseMap<const BasicBlock *, AutoreleasePoolStateSet> InStates;
+    DenseMap<const BasicBlock *, AutoreleasePoolStateSet> OutStates;
+    SmallVector<const BasicBlock *, 16> Worklist;
+    const BasicBlock &Entry = Callee->getEntryBlock();
+    InStates[&Entry] =
+        getInitialAutoreleasePoolStateSet(AutoreleasePoolState::Outside);
+    Worklist.push_back(&Entry);
+    while (!Worklist.empty()) {
+      const BasicBlock *BB = Worklist.pop_back_val();
+      AutoreleasePoolStateSet NewOutState =
+          getInitialAutoreleasePoolStateSet(AutoreleasePoolState::Outside);
+      if (transferMayAutoreleaseBlock(*BB, Depth, InStates[BB], NewOutState))
+        return true;
+      auto OutIt = OutStates.find(BB);
+      if (OutIt != OutStates.end() && OutIt->second == NewOutState)
+        continue;
+      OutStates[BB] = NewOutState;
+      for (const BasicBlock *Succ : successors(BB)) {
+        auto InIt = InStates.find(Succ);
+        if (InIt == InStates.end()) {
+          InStates[Succ] = NewOutState;
+          Worklist.push_back(Succ);
+          continue;
+        }
+        AutoreleasePoolStateSet JoinedState = InIt->second;
+        JoinedState.joinWith(NewOutState);
+        if (JoinedState != InIt->second) {
+          InIt->second = JoinedState;
+          Worklist.push_back(Succ);
         }
       }
+    }
+    for (const auto &KV : OutStates) {
+      if (hasUncontainedDirtyPoolState(KV.second))
+        return true;
     }
     return false;
   }
