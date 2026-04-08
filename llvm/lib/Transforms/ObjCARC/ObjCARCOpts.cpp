@@ -2489,6 +2489,103 @@ bool ObjCARCOpt::run(Function &F, AAResults &AA) {
 
 /// Interprocedurally determine if calls made by the given call site can
 /// possibly produce autoreleases.
+bool MayAutorelease(const CallBase &CB, unsigned Depth);
+
+/// Interprocedurally determine if calls made by the given call site can
+/// possibly produce autoreleases.
+enum class AutoreleasePoolState : uint8_t {
+  OutsidePool,
+  InsideCleanPool,
+  InsideDirtyPool,
+  Unknown
+};
+
+static AutoreleasePoolState
+joinAutoreleasePoolStates(AutoreleasePoolState Left,
+                          AutoreleasePoolState Right) {
+  if (Left == Right)
+    return Left;
+  if (Left == AutoreleasePoolState::Unknown ||
+      Right == AutoreleasePoolState::Unknown)
+    return AutoreleasePoolState::Unknown;
+  if ((Left == AutoreleasePoolState::InsideCleanPool &&
+       Right == AutoreleasePoolState::InsideDirtyPool) ||
+      (Left == AutoreleasePoolState::InsideDirtyPool &&
+       Right == AutoreleasePoolState::InsideCleanPool))
+    return AutoreleasePoolState::InsideDirtyPool;
+  return AutoreleasePoolState::Unknown;
+}
+
+static bool transferMayAutoreleaseBlock(const BasicBlock &BB, unsigned Depth,
+                                        AutoreleasePoolState InState,
+                                        AutoreleasePoolState &OutState) {
+  AutoreleasePoolState State = InState;
+  for (const Instruction &I : BB) {
+    ARCInstKind InstKind = GetBasicARCInstKind(&I);
+    switch (InstKind) {
+    case ARCInstKind::AutoreleasepoolPush:
+      if (State == AutoreleasePoolState::OutsidePool)
+        State = AutoreleasePoolState::InsideCleanPool;
+      break;
+
+    case ARCInstKind::AutoreleasepoolPop:
+      if (State == AutoreleasePoolState::InsideCleanPool ||
+          State == AutoreleasePoolState::InsideDirtyPool)
+        State = AutoreleasePoolState::Unknown;
+      break;
+
+    case ARCInstKind::Autorelease:
+    case ARCInstKind::AutoreleaseRV:
+    case ARCInstKind::FusedRetainAutorelease:
+    case ARCInstKind::FusedRetainAutoreleaseRV:
+    case ARCInstKind::LoadWeak:
+      // These may produce autoreleases
+      if (State == AutoreleasePoolState::OutsidePool ||
+          State == AutoreleasePoolState::Unknown)
+        return true;
+      State = AutoreleasePoolState::InsideDirtyPool;
+      break;
+
+    case ARCInstKind::Retain:
+    case ARCInstKind::RetainRV:
+    case ARCInstKind::UnsafeClaimRV:
+    case ARCInstKind::RetainBlock:
+    case ARCInstKind::Release:
+    case ARCInstKind::NoopCast:
+    case ARCInstKind::LoadWeakRetained:
+    case ARCInstKind::StoreWeak:
+    case ARCInstKind::InitWeak:
+    case ARCInstKind::MoveWeak:
+    case ARCInstKind::CopyWeak:
+    case ARCInstKind::DestroyWeak:
+    case ARCInstKind::StoreStrong:
+      // These ObjC runtime functions don't produce autoreleases
+      break;
+
+    case ARCInstKind::CallOrUser:
+    case ARCInstKind::Call:
+      // For non-ObjC function calls, recursively analyze.
+      if (MayAutorelease(cast<CallBase>(I), Depth + 1)) {
+        if (State == AutoreleasePoolState::OutsidePool ||
+            State == AutoreleasePoolState::Unknown)
+          return true;
+        State = AutoreleasePoolState::InsideDirtyPool;
+      }
+      break;
+
+    case ARCInstKind::IntrinsicUser:
+    case ARCInstKind::User:
+    case ARCInstKind::None:
+      // These are not relevant for autorelease analysis
+      break;
+    }
+  }
+  OutState = State;
+  return false;
+}
+
+/// Interprocedurally determine if calls made by the given call site can
+/// possibly produce autoreleases.
 bool MayAutorelease(const CallBase &CB, unsigned Depth = 0) {
   if (CB.onlyReadsMemory())
     return false;
@@ -2501,68 +2598,38 @@ bool MayAutorelease(const CallBase &CB, unsigned Depth = 0) {
   if (const Function *Callee = CB.getCalledFunction()) {
     if (!Callee->hasExactDefinition())
       return true;
-    for (const BasicBlock &BB : *Callee) {
-      // Track nested autorelease pools in a single pass. Autoreleases inside a
-      // pool are drained before the pool ends; only effects at function scope
-      // (empty stack) or in a pool not closed in this block matter.
-      SmallVector<bool, 4> PoolStack;
-      for (const Instruction &I : BB) {
-        ARCInstKind InstKind = GetBasicARCInstKind(&I);
-        switch (InstKind) {
-        case ARCInstKind::AutoreleasepoolPush:
-          PoolStack.push_back(false);
-          break;
-
-        case ARCInstKind::AutoreleasepoolPop:
-          if (!PoolStack.empty())
-            PoolStack.pop_back();
-          break;
-
-        case ARCInstKind::Autorelease:
-        case ARCInstKind::AutoreleaseRV:
-        case ARCInstKind::FusedRetainAutorelease:
-        case ARCInstKind::FusedRetainAutoreleaseRV:
-        case ARCInstKind::LoadWeak:
-          // These may produce autoreleases
-          if (PoolStack.empty())
-            return true;
-          PoolStack.back() = true;
-          break;
-
-        case ARCInstKind::Retain:
-        case ARCInstKind::RetainRV:
-        case ARCInstKind::UnsafeClaimRV:
-        case ARCInstKind::RetainBlock:
-        case ARCInstKind::Release:
-        case ARCInstKind::NoopCast:
-        case ARCInstKind::LoadWeakRetained:
-        case ARCInstKind::StoreWeak:
-        case ARCInstKind::InitWeak:
-        case ARCInstKind::MoveWeak:
-        case ARCInstKind::CopyWeak:
-        case ARCInstKind::DestroyWeak:
-        case ARCInstKind::StoreStrong:
-          // These ObjC runtime functions don't produce autoreleases
-          break;
-
-        case ARCInstKind::CallOrUser:
-        case ARCInstKind::Call:
-          // For non-ObjC function calls, recursively analyze.
-          if (MayAutorelease(cast<CallBase>(I), Depth + 1)) {
-            if (PoolStack.empty())
-              return true;
-            PoolStack.back() = true;
-          }
-          break;
-
-        case ARCInstKind::IntrinsicUser:
-        case ARCInstKind::User:
-        case ARCInstKind::None:
-          // These are not relevant for autorelease analysis
-          break;
+    DenseMap<const BasicBlock *, AutoreleasePoolState> InStates;
+    DenseMap<const BasicBlock *, AutoreleasePoolState> OutStates;
+    SmallVector<const BasicBlock *, 16> Worklist;
+    const BasicBlock &Entry = Callee->getEntryBlock();
+    InStates[&Entry] = AutoreleasePoolState::OutsidePool;
+    Worklist.push_back(&Entry);
+    while (!Worklist.empty()) {
+      const BasicBlock *BB = Worklist.pop_back_val();
+      AutoreleasePoolState NewOutState = AutoreleasePoolState::OutsidePool;
+      if (transferMayAutoreleaseBlock(*BB, Depth, InStates[BB], NewOutState))
+        return true;
+      auto OutIt = OutStates.find(BB);
+      if (OutIt != OutStates.end() && OutIt->second == NewOutState)
+        continue;
+      OutStates[BB] = NewOutState;
+      for (const BasicBlock *Succ : successors(BB)) {
+        auto InIt = InStates.find(Succ);
+        if (InIt == InStates.end()) {
+          InStates[Succ] = NewOutState;
+          Worklist.push_back(Succ);
+          continue;
+        }
+        AutoreleasePoolState JoinedState =
+            joinAutoreleasePoolStates(InIt->second, NewOutState);
+        if (JoinedState != InIt->second) {
+          InIt->second = JoinedState;
+          Worklist.push_back(Succ);
         }
       }
-      if (!PoolStack.empty() && llvm::is_contained(PoolStack, true))
+    }
+    for (const auto &KV : OutStates) {
+      if (KV.second == AutoreleasePoolState::InsideDirtyPool)
         return true;
     }
     return false;
