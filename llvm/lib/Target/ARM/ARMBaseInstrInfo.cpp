@@ -2615,6 +2615,107 @@ bool llvm::rewriteARMFrameIndex(MachineInstr &MI, unsigned FrameRegIdx,
 // ARM supports MachineCombiner.
 bool ARMBaseInstrInfo::useMachineCombiner() const { return true; }
 
+/// Thumb1 record-form instructions (Thumb1sI) append \p s_cc_out (CPSR) as an
+/// explicit def at operand index 1. Source GPRs are therefore at operands 2
+/// and 3, not 1 and 2 as the generic MachineCombiner logic assumes.
+static void getMachineCombinerSrcOpIndices(unsigned Opcode, unsigned &Src0,
+                                           unsigned &Src1) {
+  switch (Opcode) {
+  case ARM::tADDrr:
+  case ARM::tAND:
+  case ARM::tORR:
+  case ARM::tEOR:
+  case ARM::tMUL:
+    Src0 = 2;
+    Src1 = 3;
+    return;
+  default:
+    Src0 = 1;
+    Src1 = 2;
+    return;
+  }
+}
+
+bool ARMBaseInstrInfo::hasReassociableOperands(
+    const MachineInstr &Inst, const MachineBasicBlock *MBB) const {
+  unsigned Src0, Src1;
+  getMachineCombinerSrcOpIndices(Inst.getOpcode(), Src0, Src1);
+  if (Src1 >= Inst.getNumOperands())
+    return TargetInstrInfo::hasReassociableOperands(Inst, MBB);
+
+  const MachineOperand &OpA = Inst.getOperand(Src0);
+  const MachineOperand &OpB = Inst.getOperand(Src1);
+  const MachineRegisterInfo &MRI = MBB->getParent()->getRegInfo();
+
+  MachineInstr *MI1 = nullptr;
+  MachineInstr *MI2 = nullptr;
+  if (OpA.isReg() && OpA.getReg().isVirtual())
+    MI1 = MRI.getUniqueVRegDef(OpA.getReg());
+  if (OpB.isReg() && OpB.getReg().isVirtual())
+    MI2 = MRI.getUniqueVRegDef(OpB.getReg());
+
+  return MI1 && MI2 && (MI1->getParent() == MBB || MI2->getParent() == MBB);
+}
+
+bool ARMBaseInstrInfo::hasReassociableSibling(const MachineInstr &Inst,
+                                              bool &Commuted) const {
+  const MachineBasicBlock *MBB = Inst.getParent();
+  const MachineRegisterInfo &MRI = MBB->getParent()->getRegInfo();
+  unsigned Src0, Src1;
+  getMachineCombinerSrcOpIndices(Inst.getOpcode(), Src0, Src1);
+  if (Src1 >= Inst.getNumOperands())
+    return TargetInstrInfo::hasReassociableSibling(Inst, Commuted);
+
+  const MachineOperand &OpA = Inst.getOperand(Src0);
+  const MachineOperand &OpB = Inst.getOperand(Src1);
+  if (!OpA.isReg() || !OpB.isReg())
+    return false;
+
+  MachineInstr *MI1 = OpA.getReg().isVirtual()
+                          ? MRI.getUniqueVRegDef(OpA.getReg())
+                          : nullptr;
+  MachineInstr *MI2 = OpB.getReg().isVirtual()
+                          ? MRI.getUniqueVRegDef(OpB.getReg())
+                          : nullptr;
+
+  if (!MI1 || !MI2)
+    return false;
+
+  unsigned Opcode = Inst.getOpcode();
+  Commuted = !areOpcodesEqualOrInverse(Opcode, MI1->getOpcode()) &&
+             areOpcodesEqualOrInverse(Opcode, MI2->getOpcode());
+  if (Commuted)
+    std::swap(MI1, MI2);
+
+  using ACMemFn = bool (ARMBaseInstrInfo::*)(const MachineInstr &, bool) const;
+  ACMemFn IsAssocComm = &ARMBaseInstrInfo::isAssociativeAndCommutative;
+  return areOpcodesEqualOrInverse(Opcode, MI1->getOpcode()) &&
+         ((this->*IsAssocComm)(*MI1, false) || (this->*IsAssocComm)(*MI1, true)) &&
+         hasReassociableOperands(*MI1, MBB) &&
+         MRI.hasOneNonDBGUse(MI1->getOperand(0).getReg());
+}
+
+void ARMBaseInstrInfo::getReassociateOperandIndices(
+    const MachineInstr &Root, unsigned Pattern,
+    std::array<unsigned, 5> &OperandIndices) const {
+  TargetInstrInfo::getReassociateOperandIndices(Root, Pattern, OperandIndices);
+  switch (Root.getOpcode()) {
+  case ARM::tADDrr:
+  case ARM::tAND:
+  case ARM::tORR:
+  case ARM::tEOR:
+  case ARM::tMUL:
+    // Thumb1sI instructions place s_cc_out (CPSR) at operand 1; GPR sources are
+    // at 2 and 3 instead of the generic layout (sources at 1 and 2).
+    for (unsigned &Idx : OperandIndices)
+      if (Idx >= 1 && Idx <= 2)
+        Idx += 1;
+    break;
+  default:
+    break;
+  }
+}
+
 /// Return true when Inst is associative and commutative so that it can be
 /// reassociated. If Invert is true, then the inverse of Inst operation must
 /// be checked.
@@ -2634,10 +2735,9 @@ bool ARMBaseInstrInfo::isAssociativeAndCommutative(const MachineInstr &Inst,
   switch (Inst.getOpcode()) {
   case ARM::ADDrr:
   case ARM::tADDrr:
-  // FIXME: Unable to reassociate because it expects a rGPR register, but gets a
-  // GPRnopc register in reassociation.
-  // Fixing this requires splitting t2ADDrr because it has different rules
-  // depending on SP case ARM::t2ADDrr:
+  // FIXME: t2ADDrr is not handled here because it mixes GPRnopc and rGPR
+  // operands depending on whether SP is involved.
+  // case ARM::t2ADDrr:
   case ARM::ANDrr:
   case ARM::tAND:
   case ARM::t2ANDrr:

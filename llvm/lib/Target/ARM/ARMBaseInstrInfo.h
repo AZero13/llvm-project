@@ -189,6 +189,16 @@ public:
   bool isAssociativeAndCommutative(const MachineInstr &Inst,
                                    bool Invert) const override;
 
+  bool hasReassociableOperands(const MachineInstr &Inst,
+                               const MachineBasicBlock *MBB) const override;
+
+  bool hasReassociableSibling(const MachineInstr &Inst,
+                              bool &Commuted) const override;
+
+  void getReassociateOperandIndices(
+      const MachineInstr &Root, unsigned Pattern,
+      std::array<unsigned, 5> &OperandIndices) const override;
+
   bool useMachineCombiner() const override;
 
   // CPSR defined in instruction

@@ -940,11 +940,11 @@ define i64 @or_tree_with_shifts_i64(i64 %a, i64 %b, i64 %c, i64 %d) {
 ; CHECK-V6M-NEXT:    ldr r4, [sp, #16]
 ; CHECK-V6M-NEXT:    orrs r4, r3
 ; CHECK-V6M-NEXT:    lsls r3, r4, #16
-; CHECK-V6M-NEXT:    orrs r1, r3
 ; CHECK-V6M-NEXT:    lsrs r2, r2, #16
 ; CHECK-V6M-NEXT:    orrs r1, r2
 ; CHECK-V6M-NEXT:    ldr r2, [sp, #8]
 ; CHECK-V6M-NEXT:    orrs r1, r2
+; CHECK-V6M-NEXT:    orrs r1, r3
 ; CHECK-V6M-NEXT:    pop {r4, pc}
   %b.shifted = shl i64 %b, 16
   %c.shifted = shl i64 %c, 32
@@ -988,8 +988,8 @@ define i32 @or_tree_with_shifts_i32(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; CHECK-V6M:       @ %bb.0:
 ; CHECK-V6M-NEXT:    orrs r0, r2
 ; CHECK-V6M-NEXT:    lsls r0, r0, #16
+; CHECK-V6M-NEXT:    orrs r1, r3
 ; CHECK-V6M-NEXT:    orrs r0, r1
-; CHECK-V6M-NEXT:    orrs r0, r3
 ; CHECK-V6M-NEXT:    bx lr
   %a.shifted = shl i32 %a, 16
   %c.shifted = shl i32 %c, 16
@@ -1032,8 +1032,8 @@ define i32 @xor_tree_with_shifts_i32(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; CHECK-V6M:       @ %bb.0:
 ; CHECK-V6M-NEXT:    eors r0, r2
 ; CHECK-V6M-NEXT:    lsrs r0, r0, #16
+; CHECK-V6M-NEXT:    eors r1, r3
 ; CHECK-V6M-NEXT:    eors r0, r1
-; CHECK-V6M-NEXT:    eors r0, r3
 ; CHECK-V6M-NEXT:    bx lr
   %a.shifted = lshr i32 %a, 16
   %c.shifted = lshr i32 %c, 16
@@ -1076,8 +1076,8 @@ define i32 @and_tree_with_shifts_i32(i32 %a, i32 %b, i32 %c, i32 %d) {
 ; CHECK-V6M:       @ %bb.0:
 ; CHECK-V6M-NEXT:    ands r0, r2
 ; CHECK-V6M-NEXT:    asrs r0, r0, #16
+; CHECK-V6M-NEXT:    ands r1, r3
 ; CHECK-V6M-NEXT:    ands r0, r1
-; CHECK-V6M-NEXT:    ands r0, r3
 ; CHECK-V6M-NEXT:    bx lr
   %a.shifted = ashr i32 %a, 16
   %c.shifted = ashr i32 %c, 16
@@ -1118,8 +1118,8 @@ define i32 @logic_tree_with_shifts_var_i32(i32 %a, i32 %b, i32 %c, i32 %d, i32 %
 ; CHECK-V6M-NEXT:    orrs r0, r2
 ; CHECK-V6M-NEXT:    ldr r2, [sp]
 ; CHECK-V6M-NEXT:    lsls r0, r2
+; CHECK-V6M-NEXT:    orrs r1, r3
 ; CHECK-V6M-NEXT:    orrs r0, r1
-; CHECK-V6M-NEXT:    orrs r0, r3
 ; CHECK-V6M-NEXT:    bx lr
   %a.shifted = shl i32 %a, %s
   %c.shifted = shl i32 %c, %s
@@ -1271,36 +1271,36 @@ define <4 x i32> @or_tree_with_shifts_vec_i32(<4 x i32> %a, <4 x i32> %b, <4 x i
 ;
 ; CHECK-V6M-LABEL: or_tree_with_shifts_vec_i32:
 ; CHECK-V6M:       @ %bb.0:
-; CHECK-V6M-NEXT:    push {r4, lr}
-; CHECK-V6M-NEXT:    ldr r4, [sp, #24]
-; CHECK-V6M-NEXT:    orrs r4, r0
-; CHECK-V6M-NEXT:    lsls r0, r4, #16
-; CHECK-V6M-NEXT:    ldr r4, [sp, #8]
-; CHECK-V6M-NEXT:    orrs r4, r0
-; CHECK-V6M-NEXT:    ldr r0, [sp, #40]
-; CHECK-V6M-NEXT:    orrs r0, r4
-; CHECK-V6M-NEXT:    ldr r4, [sp, #28]
-; CHECK-V6M-NEXT:    orrs r4, r1
-; CHECK-V6M-NEXT:    lsls r1, r4, #16
-; CHECK-V6M-NEXT:    ldr r4, [sp, #12]
-; CHECK-V6M-NEXT:    orrs r4, r1
-; CHECK-V6M-NEXT:    ldr r1, [sp, #44]
-; CHECK-V6M-NEXT:    orrs r1, r4
+; CHECK-V6M-NEXT:    push {r4, r5, r7, lr}
 ; CHECK-V6M-NEXT:    ldr r4, [sp, #32]
-; CHECK-V6M-NEXT:    orrs r4, r2
-; CHECK-V6M-NEXT:    lsls r2, r4, #16
-; CHECK-V6M-NEXT:    ldr r4, [sp, #16]
-; CHECK-V6M-NEXT:    orrs r4, r2
-; CHECK-V6M-NEXT:    ldr r2, [sp, #48]
-; CHECK-V6M-NEXT:    orrs r2, r4
+; CHECK-V6M-NEXT:    orrs r4, r0
+; CHECK-V6M-NEXT:    lsls r4, r4, #16
+; CHECK-V6M-NEXT:    ldr r5, [sp, #16]
+; CHECK-V6M-NEXT:    ldr r0, [sp, #48]
+; CHECK-V6M-NEXT:    orrs r0, r5
+; CHECK-V6M-NEXT:    orrs r0, r4
 ; CHECK-V6M-NEXT:    ldr r4, [sp, #36]
+; CHECK-V6M-NEXT:    orrs r4, r1
+; CHECK-V6M-NEXT:    lsls r4, r4, #16
+; CHECK-V6M-NEXT:    ldr r5, [sp, #20]
+; CHECK-V6M-NEXT:    ldr r1, [sp, #52]
+; CHECK-V6M-NEXT:    orrs r1, r5
+; CHECK-V6M-NEXT:    orrs r1, r4
+; CHECK-V6M-NEXT:    ldr r4, [sp, #40]
+; CHECK-V6M-NEXT:    orrs r4, r2
+; CHECK-V6M-NEXT:    lsls r4, r4, #16
+; CHECK-V6M-NEXT:    ldr r5, [sp, #24]
+; CHECK-V6M-NEXT:    ldr r2, [sp, #56]
+; CHECK-V6M-NEXT:    orrs r2, r5
+; CHECK-V6M-NEXT:    orrs r2, r4
+; CHECK-V6M-NEXT:    ldr r4, [sp, #44]
 ; CHECK-V6M-NEXT:    orrs r4, r3
-; CHECK-V6M-NEXT:    lsls r3, r4, #16
-; CHECK-V6M-NEXT:    ldr r4, [sp, #20]
-; CHECK-V6M-NEXT:    orrs r4, r3
-; CHECK-V6M-NEXT:    ldr r3, [sp, #52]
+; CHECK-V6M-NEXT:    lsls r4, r4, #16
+; CHECK-V6M-NEXT:    ldr r5, [sp, #28]
+; CHECK-V6M-NEXT:    ldr r3, [sp, #60]
+; CHECK-V6M-NEXT:    orrs r3, r5
 ; CHECK-V6M-NEXT:    orrs r3, r4
-; CHECK-V6M-NEXT:    pop {r4, pc}
+; CHECK-V6M-NEXT:    pop {r4, r5, r7, pc}
   %a.shifted = shl <4 x i32> %a, <i32 16, i32 16, i32 16, i32 16>
   %c.shifted = shl <4 x i32> %c, <i32 16, i32 16, i32 16, i32 16>
   %or.ab = or <4 x i32> %a.shifted, %b
