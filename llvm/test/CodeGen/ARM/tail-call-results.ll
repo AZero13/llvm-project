@@ -8,6 +8,7 @@
 ; easily see when this happens.
 
 declare float @callee_float()
+declare half @callee_half()
 declare i32 @callee_int()
 declare float @callee_float_vararg(i32, ...)
 declare i32 @callee_int_vararg(i32, ...)
@@ -56,6 +57,39 @@ define float @caller_float__callee_float_vararg() {
 ; HF-NOTAIL-NEXT:    pop {r7, pc}
   %r = tail call float (i32, ...) @callee_float_vararg(i32 0)
   ret float %r
+}
+
+define float @caller_float__callee_half_fpext() {
+; CHECK-LABEL: caller_float__callee_half_fpext:
+; CHECK:       @ %bb.0:
+; CHECK-NEXT:    .save {r7, lr}
+; CHECK-NEXT:    push {r7, lr}
+; CHECK-NEXT:    bl callee_half
+; CHECK-NEXT:    vmov r0, s0
+; CHECK-NEXT:    bl __gnu_h2f_ieee
+; CHECK-NEXT:    vmov s0, r0
+; CHECK-NEXT:    pop {r7, pc}
+;
+; SOFTFLOAT-LABEL: caller_float__callee_half_fpext:
+; SOFTFLOAT:       @ %bb.0:
+; SOFTFLOAT-NEXT:    .save {r7, lr}
+; SOFTFLOAT-NEXT:    push {r7, lr}
+; SOFTFLOAT-NEXT:    bl callee_half
+; SOFTFLOAT-NEXT:    pop.w {r7, lr}
+; SOFTFLOAT-NEXT:    b __gnu_h2f_ieee
+;
+; HF-NOTAIL-LABEL: caller_float__callee_half_fpext:
+; HF-NOTAIL:       @ %bb.0:
+; HF-NOTAIL-NEXT:    .save {r7, lr}
+; HF-NOTAIL-NEXT:    push {r7, lr}
+; HF-NOTAIL-NEXT:    bl callee_half
+; HF-NOTAIL-NEXT:    vmov r0, s0
+; HF-NOTAIL-NEXT:    bl __gnu_h2f_ieee
+; HF-NOTAIL-NEXT:    vmov s0, r0
+; HF-NOTAIL-NEXT:    pop {r7, pc}
+  %r = tail call half @callee_half()
+  %e = fpext half %r to float
+  ret float %e
 }
 
 define float @caller_float_vararg__callee_float(i32, ...) {
