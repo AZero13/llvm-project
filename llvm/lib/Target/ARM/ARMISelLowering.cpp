@@ -3130,7 +3130,7 @@ bool ARMTargetLowering::isUsedByReturnOnly(SDNode *N, SDValue &Chain) const {
     if (Copy->getOperand(Copy->getNumOperands()-1).getValueType() == MVT::Glue)
       return false;
     TCChain = Copy->getOperand(0);
-  } else {
+  } else if (Copy->getOpcode() != ISD::FP_EXTEND) {
     return false;
   }
 
