@@ -6112,8 +6112,12 @@ ARMBaseInstrInfo::getOutliningTypeImpl(const MachineModuleInfo &MMI,
   MachineInstr &MI = *MIT;
   const TargetRegisterInfo *TRI = &getRegisterInfo();
 
+  // Don't outline CFI instructions.
+  if (MI.isCFIInstruction())
+    return outliner::InstrType::Illegal;
+
   // PIC instructions contain labels, outlining them would break offset
-  // computing.  unsigned Opc = MI.getOpcode();
+  // computing.
   unsigned Opc = MI.getOpcode();
   if (Opc == ARM::tPICADD || Opc == ARM::PICADD || Opc == ARM::PICSTR ||
       Opc == ARM::PICSTRB || Opc == ARM::PICSTRH || Opc == ARM::PICLDR ||
@@ -6142,9 +6146,14 @@ ARMBaseInstrInfo::getOutliningTypeImpl(const MachineModuleInfo &MMI,
     // that would break this, so we can allow it here.
     return outliner::InstrType::Legal;
 
-  // Don't outline if link register or program counter value are used.
-  if (MI.readsRegister(ARM::LR, TRI) || MI.readsRegister(ARM::PC, TRI))
-    return outliner::InstrType::Illegal;
+  // Make sure none of the operands are un-outlinable.
+  for (const MachineOperand &MOP : MI.operands()) {
+    assert(!MOP.isCFIIndex());
+    // If it uses LR or PC explicitly, then don't touch it.
+    if (MOP.isReg() && !MOP.isImplicit() &&
+        (MOP.getReg() == ARM::LR || MOP.getReg() == ARM::PC))
+      return outliner::InstrType::Illegal;
+  }
 
   if (MI.isCall()) {
     // Get the function associated with the call.  Look at each operand and find
@@ -6242,10 +6251,6 @@ ARMBaseInstrInfo::getOutliningTypeImpl(const MachineModuleInfo &MMI,
   // Be conservative with IT blocks.
   if (MI.readsRegister(ARM::ITSTATE, TRI) ||
       MI.modifiesRegister(ARM::ITSTATE, TRI))
-    return outliner::InstrType::Illegal;
-
-  // Don't outline CFI instructions.
-  if (MI.isCFIInstruction())
     return outliner::InstrType::Illegal;
 
   return outliner::InstrType::Legal;
