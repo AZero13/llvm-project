@@ -22187,6 +22187,8 @@ bool ARMTargetLowering::isComplexDeinterleavingOperationSupported(
   unsigned VTyWidth = VTy->getScalarSizeInBits() * NumElements;
   if (VTyWidth < 128 || !llvm::isPowerOf2_32(VTyWidth))
     return false;
+  if (Operation == ComplexDeinterleavingOperation::CDot)
+    return false;
 
   // Both VCADD and VCMUL/VCMLA support the same types, F16 and F32
   if (ScalarTy->isHalfTy() || ScalarTy->isFloatTy())
