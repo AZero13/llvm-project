@@ -5711,38 +5711,6 @@ ARMBaseInstrInfo::getOutliningCandidateInfo(
   for (outliner::Candidate &C : RepeatedSequenceLocs)
     FlagsSetInAll &= C.Flags;
 
-  // According to the ARM Procedure Call Standard, the following are
-  // undefined on entry/exit from a function call:
-  //
-  // * Register R12(IP),
-  // * Condition codes (and thus the CPSR register)
-  //
-  // Since we control the instructions which are part of the outlined regions
-  // we don't need to be fully compliant with the AAPCS, but we have to
-  // guarantee that if a veneer is inserted at link time the code is still
-  // correct.  Because of this, we can't outline any sequence of instructions
-  // where one of these registers is live into/across it. Thus, we need to
-  // delete those candidates.
-  auto CantGuaranteeValueAcrossCall = [&TRI](outliner::Candidate &C) {
-    // If the unsafe registers in this block are all dead, then we don't need
-    // to compute liveness here.
-    if (C.Flags & UnsafeRegsDead)
-      return false;
-    return C.isAnyUnavailableAcrossOrOutOfSeq({ARM::R12, ARM::CPSR}, TRI);
-  };
-
-  // Are there any candidates where those registers are live?
-  if (!(FlagsSetInAll & UnsafeRegsDead)) {
-    // Erase every candidate that violates the restrictions above. (It could be
-    // true that we have viable candidates, so it's not worth bailing out in
-    // the case that, say, 1 out of 20 candidates violate the restructions.)
-    llvm::erase_if(RepeatedSequenceLocs, CantGuaranteeValueAcrossCall);
-
-    // If the sequence doesn't have enough candidates left, then we're done.
-    if (RepeatedSequenceLocs.size() < MinRepeats)
-      return std::nullopt;
-  }
-
   // We expect the majority of the outlining candidates to be in consensus with
   // regard to return address sign and authentication, and branch target
   // enforcement, in other words, partitioning according to all the four
@@ -5840,16 +5808,51 @@ ARMBaseInstrInfo::getOutliningCandidateInfo(
     unsigned NumBytesNoStackCalls = 0;
     std::vector<outliner::Candidate> CandidatesWithoutStackFixups;
 
+    const int64_t OutlinedLRSaveStackBytes = getOutlinedLRSaveStackBytes();
+
+    // True if each SP-relative mem op in the sequence can still be encoded
+    // after OutlinedLRSaveStackBytes is applied (see checkAndUpdateStackOffset).
+    auto IsSafeToFixup = [this, OutlinedLRSaveStackBytes](MachineInstr &MI) {
+      if (MI.isCall())
+        return true;
+      const TargetRegisterInfo &TRI = getRegisterInfo();
+      if (!MI.modifiesRegister(ARM::SP, &TRI) &&
+          !MI.readsRegister(ARM::SP, &TRI))
+        return true;
+      // Any other SP update breaks LR save/restore placement.
+      if (MI.modifiesRegister(ARM::SP, &TRI))
+        return false;
+      if (!MI.mayLoadOrStore())
+        return false;
+      return checkAndUpdateStackOffset(&MI, OutlinedLRSaveStackBytes, false);
+    };
+
+    const bool AllStackInstrsSafe =
+        llvm::all_of(RepeatedSequenceLocs[0], IsSafeToFixup);
+
     for (outliner::Candidate &C : RepeatedSequenceLocs) {
-      // LR liveness is overestimated in return blocks, unless they end with a
-      // tail call.
-      const auto Last = C.getMBB()->rbegin();
-      const bool LRIsAvailable =
-          C.getMBB()->isReturnBlock() && !Last->isCall()
-              ? isLRAvailable(TRI, Last,
-                              (MachineBasicBlock::reverse_iterator)C.begin())
-              : C.isAvailableAcrossAndOutOfSeq(ARM::LR, TRI);
-      if (LRIsAvailable) {
+      MachineBasicBlock *MBB = C.getMBB();
+      auto LastRI = MBB->rbegin();
+      bool LRIsAvailable;
+      if (MBB->isReturnBlock() && !LastRI->isCall())
+        LRIsAvailable = isLRAvailable(TRI, LastRI,
+                                        (MachineBasicBlock::reverse_iterator)
+                                            C.begin());
+      else if (C.Flags & MachineOutlinerMBBFlags::LRUnavailableSomewhere)
+        LRIsAvailable = C.isAvailableAcrossAndOutOfSeq(ARM::LR, TRI);
+      else
+        LRIsAvailable = true;
+
+      // If we have a noreturn caller, then we're going to be conservative and
+      // say that we have to save LR. If we don't have a ret at the end of the
+      // block, then we can't reason about liveness accurately.
+      //
+      // FIXME: We can probably do better than always disabling this in
+      // noreturn functions by fixing up the liveness info.
+      bool IsNoReturn =
+          C.getMF()->getFunction().hasFnAttribute(Attribute::NoReturn);
+
+      if (LRIsAvailable && !IsNoReturn) {
         FrameID = MachineOutlinerNoLRSave;
         NumBytesNoStackCalls += Costs.CallNoLRSave;
         C.setCallInfo(MachineOutlinerNoLRSave, Costs.CallNoLRSave);
@@ -5881,9 +5884,10 @@ ARMBaseInstrInfo::getOutliningCandidateInfo(
 
     // If there are no places where we have to save LR, then note that we don't
     // have to update the stack. Otherwise, give every candidate the default
-    // call type
-    if (NumBytesNoStackCalls <=
-        RepeatedSequenceLocs.size() * Costs.CallDefault) {
+    // call type, as long as it's safe to do so.
+    if (!AllStackInstrsSafe ||
+        NumBytesNoStackCalls <=
+            RepeatedSequenceLocs.size() * Costs.CallDefault) {
       RepeatedSequenceLocs = CandidatesWithoutStackFixups;
       FrameID = MachineOutlinerNoLRSave;
       if (RepeatedSequenceLocs.size() < MinRepeats)
@@ -6057,52 +6061,79 @@ bool ARMBaseInstrInfo::isFunctionSafeToOutlineFrom(
   return true;
 }
 
-bool ARMBaseInstrInfo::isMBBSafeToOutlineFrom(MachineBasicBlock &MBB,
-                                              unsigned &Flags) const {
-  // Check if LR is available through all of the MBB. If it's not, then set
-  // a flag.
+SmallVector<std::pair<MachineBasicBlock::iterator, MachineBasicBlock::iterator>>
+ARMBaseInstrInfo::getOutlinableRanges(MachineBasicBlock &MBB,
+                                      unsigned &Flags) const {
   assert(MBB.getParent()->getRegInfo().tracksLiveness() &&
-         "Suitable Machine Function for outlining must track liveness");
-
+         "Must track liveness!");
+  SmallVector<
+      std::pair<MachineBasicBlock::iterator, MachineBasicBlock::iterator>>
+      Ranges;
+  // AAPCS (ARM) does not preserve IP (R12) or the condition flags (CPSR)
+  // across a call. If either is live across an outlined call boundary, the
+  // outlined helper or the BL may clobber them. Partition the block into
+  // ranges where R12 and CPSR are dead, mirroring AArch64's x16/x17/NZCV split.
   LiveRegUnits LRU(getRegisterInfo());
+  auto AreAllUnsafeRegsDead = [&LRU]() {
+    return LRU.available(ARM::R12) && LRU.available(ARM::CPSR);
+  };
 
-  for (MachineInstr &MI : llvm::reverse(MBB))
-    LRU.accumulate(MI);
-
-  // Check if each of the unsafe registers are available...
-  bool R12AvailableInBlock = LRU.available(ARM::R12);
-  bool CPSRAvailableInBlock = LRU.available(ARM::CPSR);
-
-  // If all of these are dead (and not live out), we know we don't have to check
-  // them later.
-  if (R12AvailableInBlock && CPSRAvailableInBlock)
-    Flags |= MachineOutlinerMBBFlags::UnsafeRegsDead;
-
-  // Now, add the live outs to the set.
+  // Track whether LR is available at every step while walking outlinable
+  // ranges, so getOutliningCandidateInfo can use LRUnavailableSomewhere cheaply.
+  bool LRAvailableEverywhere = true;
   LRU.addLiveOuts(MBB);
-
-  // If any of these registers is available in the MBB, but also a live out of
-  // the block, then we know outlining is unsafe.
-  if (R12AvailableInBlock && !LRU.available(ARM::R12))
-    return false;
-  if (CPSRAvailableInBlock && !LRU.available(ARM::CPSR))
-    return false;
-
-  // Check if there's a call inside this MachineBasicBlock.  If there is, then
-  // set a flag.
-  if (any_of(MBB, [](MachineInstr &MI) { return MI.isCall(); }))
-    Flags |= MachineOutlinerMBBFlags::HasCalls;
-
-  // LR liveness is overestimated in return blocks.
-
-  bool LRIsAvailable =
-      MBB.isReturnBlock() && !MBB.back().isCall()
-          ? isLRAvailable(getRegisterInfo(), MBB.rbegin(), MBB.rend())
-          : LRU.available(ARM::LR);
-  if (!LRIsAvailable)
+  auto UpdateWholeMBBFlags = [&Flags](const MachineInstr &MI) {
+    if (MI.isCall() && !MI.isTerminator())
+      Flags |= MachineOutlinerMBBFlags::HasCalls;
+  };
+  MachineBasicBlock::instr_iterator RangeBegin, RangeEnd;
+  unsigned RangeLen;
+  auto CreateNewRangeStartingAt =
+      [&RangeBegin, &RangeEnd,
+       &RangeLen](MachineBasicBlock::instr_iterator NewBegin) {
+        RangeBegin = NewBegin;
+        RangeEnd = std::next(RangeBegin);
+        RangeLen = 0;
+      };
+  auto SaveRangeIfNonEmpty = [&RangeLen, &Ranges, &RangeBegin, &RangeEnd]() {
+    if (RangeLen <= 1)
+      return;
+    if (!RangeBegin.isEnd() && RangeBegin->isBundledWithPred())
+      return;
+    if (!RangeEnd.isEnd() && RangeEnd->isBundledWithPred())
+      return;
+    Ranges.emplace_back(RangeBegin, RangeEnd);
+  };
+  auto FirstPossibleEndPt = MBB.instr_rbegin();
+  for (; FirstPossibleEndPt != MBB.instr_rend(); ++FirstPossibleEndPt) {
+    LRU.stepBackward(*FirstPossibleEndPt);
+    UpdateWholeMBBFlags(*FirstPossibleEndPt);
+    if (AreAllUnsafeRegsDead())
+      break;
+  }
+  if (FirstPossibleEndPt == MBB.instr_rend())
+    return Ranges;
+  CreateNewRangeStartingAt(FirstPossibleEndPt->getIterator());
+  for (auto &MI : make_range(FirstPossibleEndPt, MBB.instr_rend())) {
+    LRU.stepBackward(MI);
+    UpdateWholeMBBFlags(MI);
+    if (!AreAllUnsafeRegsDead()) {
+      SaveRangeIfNonEmpty();
+      CreateNewRangeStartingAt(MI.getIterator());
+      continue;
+    }
+    LRAvailableEverywhere &= LRU.available(ARM::LR);
+    RangeBegin = MI.getIterator();
+    ++RangeLen;
+  }
+  if (AreAllUnsafeRegsDead())
+    SaveRangeIfNonEmpty();
+  if (Ranges.empty())
+    return Ranges;
+  std::reverse(Ranges.begin(), Ranges.end());
+  if (!LRAvailableEverywhere)
     Flags |= MachineOutlinerMBBFlags::LRUnavailableSomewhere;
-
-  return true;
+  return Ranges;
 }
 
 outliner::InstrType
@@ -6231,8 +6262,7 @@ ARMBaseInstrInfo::getOutliningTypeImpl(const MachineModuleInfo &MMI,
 
     // At this point, we have a stack instruction that we might need to fix up.
     // up. We'll handle it if it's a load or store.
-    if (checkAndUpdateStackOffset(&MI, Subtarget.getStackAlignment().value(),
-                                  false))
+    if (checkAndUpdateStackOffset(&MI, getOutlinedLRSaveStackBytes(), false))
       return outliner::InstrType::Legal;
 
     // We can't fix it up, so don't outline it.
@@ -6251,16 +6281,22 @@ ARMBaseInstrInfo::getOutliningTypeImpl(const MachineModuleInfo &MMI,
   return outliner::InstrType::Legal;
 }
 
+int ARMBaseInstrInfo::getOutlinedLRSaveStackBytes() const {
+  return static_cast<int>(
+      std::max(Subtarget.getStackAlignment().value(), uint64_t(8)));
+}
+
 void ARMBaseInstrInfo::fixupPostOutline(MachineBasicBlock &MBB) const {
+  const int64_t Fixup = getOutlinedLRSaveStackBytes();
   for (MachineInstr &MI : MBB) {
-    checkAndUpdateStackOffset(&MI, Subtarget.getStackAlignment().value(), true);
+    checkAndUpdateStackOffset(&MI, Fixup, true);
   }
 }
 
 void ARMBaseInstrInfo::saveLROnStack(MachineBasicBlock &MBB,
                                      MachineBasicBlock::iterator It, bool CFI,
                                      bool Auth) const {
-  int Align = std::max(Subtarget.getStackAlignment().value(), uint64_t(8));
+  int Align = getOutlinedLRSaveStackBytes();
   unsigned MIFlags = CFI ? MachineInstr::FrameSetup : 0;
   assert(Align >= 8 && Align <= 256);
   if (Auth) {
@@ -6305,7 +6341,7 @@ void ARMBaseInstrInfo::saveLROnStack(MachineBasicBlock &MBB,
 void ARMBaseInstrInfo::restoreLRFromStack(MachineBasicBlock &MBB,
                                           MachineBasicBlock::iterator It,
                                           bool CFI, bool Auth) const {
-  int Align = Subtarget.getStackAlignment().value();
+  int Align = getOutlinedLRSaveStackBytes();
   unsigned MIFlags = CFI ? MachineInstr::FrameDestroy : 0;
   if (Auth) {
     assert(Subtarget.isThumb2());
@@ -6326,7 +6362,7 @@ void ARMBaseInstrInfo::restoreLRFromStack(MachineBasicBlock &MBB,
                                   .addReg(ARM::SP);
     if (!Subtarget.isThumb())
       MIB.addReg(0);
-    MIB.addImm(Subtarget.getStackAlignment().value())
+    MIB.addImm(Align)
         .add(predOps(ARMCC::AL))
         .setMIFlags(MIFlags);
   }

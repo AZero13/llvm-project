@@ -361,8 +361,9 @@ public:
   outliner::InstrType getOutliningTypeImpl(const MachineModuleInfo &MMI,
                                            MachineBasicBlock::iterator &MIT,
                                            unsigned Flags) const override;
-  bool isMBBSafeToOutlineFrom(MachineBasicBlock &MBB,
-                              unsigned &Flags) const override;
+  SmallVector<
+      std::pair<MachineBasicBlock::iterator, MachineBasicBlock::iterator>>
+  getOutlinableRanges(MachineBasicBlock &MBB, unsigned &Flags) const override;
   void buildOutlinedFrame(MachineBasicBlock &MBB, MachineFunction &MF,
                           const outliner::OutlinedFunction &OF) const override;
   MachineBasicBlock::iterator
@@ -410,6 +411,11 @@ private:
   ///
   /// \param MBB A \p MachineBasicBlock in an outlined function.
   void fixupPostOutline(MachineBasicBlock &MBB) const;
+
+  /// Bytes pushed when \p saveLROnStack builds the outlined-helper prologue.
+  /// Must match \p fixupPostOutline and outlining legality checks that simulate
+  /// the same SP adjustment.
+  int getOutlinedLRSaveStackBytes() const;
 
   /// Returns true if the machine instruction offset can handle the stack fixup
   /// and updates it if requested.

@@ -17,11 +17,31 @@ tracksRegLiveness: true
 body:             |
   ; CHECK-LABEL: name: outline_cpsr_r12_ok
   ; CHECK: bb.0:
-  ; CHECK:   BL @OUTLINED_FUNCTION_0
-  ; CHECK:   $r3 = MOVr $r12, 14 /* CC::al */, $noreg, $noreg
-  ; CHECK: bb.1:
-  ; CHECK:   BL @OUTLINED_FUNCTION_0
-  ; CHECK:   $r4 = MOVr $r12, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   successors: %bb.1(0x80000000)
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   $r12 = MOVi 1, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   CMPri $r12, 42, 14 /* CC::al */, $noreg, implicit-def $cpsr
+  ; CHECK-NEXT:   $r0 = MOVi 1, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r1 = MOVi 1, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r2 = MOVi 1, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r3 = MOVi 1, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   BL @z
+  ; CHECK-NEXT:   $r3 = MOVr $r12, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.1:
+  ; CHECK-NEXT:   successors: %bb.2(0x80000000)
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   $r12 = MOVi 1, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   CMPri $r12, 42, 14 /* CC::al */, $noreg, implicit-def $cpsr
+  ; CHECK-NEXT:   $r0 = MOVi 1, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r1 = MOVi 1, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r2 = MOVi 1, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r3 = MOVi 1, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   BL @z
+  ; CHECK-NEXT:   $r4 = MOVr $r12, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.2:
+  ; CHECK-NEXT:   BX_RET 14 /* CC::al */, $noreg
   bb.0:
     $r12 = MOVi 1, 14, $noreg, $noreg
     CMPri $r12, 42, 14, $noreg, implicit-def $cpsr
@@ -49,12 +69,31 @@ name:           dont_outline_cpsr_r12_1
 tracksRegLiveness: true
 body:             |
   ; CHECK-LABEL: name: dont_outline_cpsr_r12_1
-  ; CHECK:  bb.0:
-  ; CHECK:    BL @OUTLINED_FUNCTION_1
-  ; CHECK:  bb.1:
-  ; CHECK:    BL @OUTLINED_FUNCTION_1
-  ; CHECK-LABEL: bb.2:
-  ; CHECK-NOT: BL @OUTLINED_FUNCTION_1
+  ; CHECK: bb.0:
+  ; CHECK-NEXT:   successors: %bb.1(0x80000000)
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   BL @OUTLINED_FUNCTION_0, implicit-def $lr, implicit $sp, implicit-def $lr, implicit-def $r0, implicit-def $r1, implicit-def $r2, implicit-def $r3, implicit $noreg, implicit $sp
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.1:
+  ; CHECK-NEXT:   successors: %bb.2(0x80000000)
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   BL @OUTLINED_FUNCTION_0, implicit-def $lr, implicit $sp, implicit-def $lr, implicit-def $r0, implicit-def $r1, implicit-def $r2, implicit-def $r3, implicit $noreg, implicit $sp
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.2:
+  ; CHECK-NEXT:   successors: %bb.3(0x80000000)
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   $r12 = MOVi 1, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   CMPri $r12, 42, 14 /* CC::al */, $noreg, implicit-def $cpsr
+  ; CHECK-NEXT:   $r0 = MOVi 2, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r1 = MOVi 2, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r2 = MOVi 2, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r3 = MOVi 2, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   BL @z
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.3:
+  ; CHECK-NEXT:   liveins: $cpsr, $r12
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   BX_RET 14 /* CC::al */, $noreg
   bb.0:
     $r0 = MOVi 2, 14, $noreg, $noreg
     $r1 = MOVi 2, 14, $noreg, $noreg
@@ -85,7 +124,41 @@ name:           dont_outline_cpsr_r12_2
 tracksRegLiveness: true
 body:             |
   ; CHECK-LABEL: name: dont_outline_cpsr_r12_2
-  ; CHECK-NOT: BL @OUTLINED_FUNCTION
+  ; CHECK: bb.0:
+  ; CHECK-NEXT:   successors: %bb.1(0x80000000)
+  ; CHECK-NEXT:   liveins: $r12
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   CMPri $r12, 42, 14 /* CC::al */, $noreg, implicit-def $cpsr
+  ; CHECK-NEXT:   $r0 = MOVi 3, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r1 = MOVi 3, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r2 = MOVi 3, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r3 = MOVi 3, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   BL @z
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.1:
+  ; CHECK-NEXT:   successors: %bb.2(0x80000000)
+  ; CHECK-NEXT:   liveins: $r12
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   CMPri $r12, 42, 14 /* CC::al */, $noreg, implicit-def $cpsr
+  ; CHECK-NEXT:   $r0 = MOVi 3, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r1 = MOVi 3, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r2 = MOVi 3, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r3 = MOVi 3, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   BL @z
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.2:
+  ; CHECK-NEXT:   successors: %bb.3(0x80000000)
+  ; CHECK-NEXT:   liveins: $r12
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT:   CMPri $r12, 42, 14 /* CC::al */, $noreg, implicit-def $cpsr
+  ; CHECK-NEXT:   $r0 = MOVi 3, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r1 = MOVi 3, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r2 = MOVi 3, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   $r3 = MOVi 3, 14 /* CC::al */, $noreg, $noreg
+  ; CHECK-NEXT:   BL @z
+  ; CHECK-NEXT: {{  $}}
+  ; CHECK-NEXT: bb.3:
+  ; CHECK-NEXT:   BX_RET 14 /* CC::al */, $noreg
   bb.0:
     liveins: $r12
     CMPri $r12, 42, 14, $noreg, implicit-def $cpsr
