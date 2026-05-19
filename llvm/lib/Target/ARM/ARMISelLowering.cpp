@@ -5211,6 +5211,21 @@ SDValue ARMTargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const {
   EVT VT = Op.getValueType();
   SDLoc dl(Op);
 
+  SDValue LHS = Op.getOperand(0);
+  SDValue RHS = Op.getOperand(1);
+  ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(4))->get();
+
+  if (isUnsupportedFloatingType(LHS.getValueType())) {
+    softenSetCCOperands(DAG, LHS.getValueType(), LHS, RHS, CC, dl, LHS, RHS);
+
+    // If softenSetCCOperands only returned one value, we should compare it to
+    // zero.
+    if (!RHS.getNode()) {
+      RHS = DAG.getConstant(0, dl, LHS.getValueType());
+      CC = ISD::SETNE;
+    }
+  }
+
   // Try to convert two saturating conditional selects into a single SSAT
   if ((!Subtarget->isThumb() && Subtarget->hasV6Ops()) || Subtarget->isThumb2())
     if (SDValue SatValue = LowerSaturatingConditional(Op, DAG))
@@ -5236,15 +5251,11 @@ SDValue ARMTargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const {
       return DAG.getNode(ISD::OR, dl, VT, SatValue, ShiftV);
   }
 
-  SDValue LHS = Op.getOperand(0);
-  SDValue RHS = Op.getOperand(1);
-  ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(4))->get();
   SDValue TrueVal = Op.getOperand(2);
   SDValue FalseVal = Op.getOperand(3);
   ConstantSDNode *CFVal = dyn_cast<ConstantSDNode>(FalseVal);
   ConstantSDNode *RHSC = dyn_cast<ConstantSDNode>(RHS);
   if (Op.getValueType().isInteger()) {
-
     // Check for SMAX(lhs, 0) and SMIN(lhs, 0) patterns.
     // (SELECT_CC setgt, lhs, 0, lhs, 0) -> (BIC lhs, (SRA lhs, typesize-1))
     // (SELECT_CC setlt, lhs, 0, lhs, 0) -> (AND lhs, (SRA lhs, typesize-1))
@@ -5283,20 +5294,7 @@ SDValue ARMTargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const {
       EVT VT = Op.getValueType();
       return DAG.getNode(Opcode, dl, VT, Op, Op, ARMcc, Cmp);
     }
-  }
 
-  if (isUnsupportedFloatingType(LHS.getValueType())) {
-    softenSetCCOperands(DAG, LHS.getValueType(), LHS, RHS, CC, dl, LHS, RHS);
-
-    // If softenSetCCOperands only returned one value, we should compare it to
-    // zero.
-    if (!RHS.getNode()) {
-      RHS = DAG.getConstant(0, dl, LHS.getValueType());
-      CC = ISD::SETNE;
-    }
-  }
-
-  if (LHS.getValueType() == MVT::i32) {
     // Try to generate VSEL on ARMv8.
     // The VSEL instruction can't use all the usual ARM condition
     // codes: it only has two bits to select the condition code, so it's
