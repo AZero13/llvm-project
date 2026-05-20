@@ -2559,6 +2559,30 @@ static SDValue foldSelectWithIdentityConstant(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
+static bool isSelectLike(unsigned Opc) {
+  return Opc == ISD::SELECT || Opc == ISD::SELECT_CC;
+}
+
+static SDValue getSelectTrueVal(SDValue Sel) {
+  assert(isSelectLike(Sel.getOpcode()) && "unexpected select opcode");
+  return Sel.getOperand(Sel.getOpcode() == ISD::SELECT ? 1 : 2);
+}
+
+static SDValue getSelectFalseVal(SDValue Sel) {
+  assert(isSelectLike(Sel.getOpcode()) && "unexpected select opcode");
+  return Sel.getOperand(Sel.getOpcode() == ISD::SELECT ? 2 : 3);
+}
+
+static SDValue emitSelectLike(SelectionDAG &DAG, const SDLoc &DL, EVT VT,
+                            SDValue Sel, SDValue NewCT, SDValue NewCF,
+                            SDNodeFlags Flags) {
+  if (Sel.getOpcode() == ISD::SELECT)
+    return DAG.getSelect(DL, VT, Sel.getOperand(0), NewCT, NewCF, Flags);
+  ISD::CondCode CC = cast<CondCodeSDNode>(Sel.getOperand(4))->get();
+  return DAG.getSelectCC(DL, Sel.getOperand(0), Sel.getOperand(1), NewCT, NewCF,
+                         CC, Flags);
+}
+
 SDValue DAGCombiner::foldBinOpIntoSelect(SDNode *BO) {
   const TargetLowering &TLI = DAG.getTargetLoweringInfo();
   assert(TLI.isBinOp(BO->getOpcode()) && BO->getNumValues() == 1 &&
@@ -2573,11 +2597,10 @@ SDValue DAGCombiner::foldBinOpIntoSelect(SDNode *BO) {
 
   // Don't do this unless the old select is going away. We want to eliminate the
   // binary operator, not replace a binop with a select.
-  // TODO: Handle ISD::SELECT_CC.
   unsigned SelOpNo = 0;
   SDValue Sel = BO->getOperand(0);
   auto BinOpcode = BO->getOpcode();
-  if (Sel.getOpcode() != ISD::SELECT || !Sel.hasOneUse()) {
+  if (!isSelectLike(Sel.getOpcode()) || !Sel.hasOneUse()) {
     SelOpNo = 1;
     Sel = BO->getOperand(1);
 
@@ -2593,15 +2616,15 @@ SDValue DAGCombiner::foldBinOpIntoSelect(SDNode *BO) {
     }
   }
 
-  if (Sel.getOpcode() != ISD::SELECT || !Sel.hasOneUse())
+  if (!isSelectLike(Sel.getOpcode()) || !Sel.hasOneUse())
     return SDValue();
 
-  SDValue CT = Sel.getOperand(1);
+  SDValue CT = getSelectTrueVal(Sel);
   if (!isConstantOrConstantVector(CT, true) &&
       !DAG.isConstantFPBuildVectorOrConstantFP(CT))
     return SDValue();
 
-  SDValue CF = Sel.getOperand(2);
+  SDValue CF = getSelectFalseVal(Sel);
   if (!isConstantOrConstantVector(CF, true) &&
       !DAG.isConstantFPBuildVectorOrConstantFP(CF))
     return SDValue();
@@ -2655,7 +2678,7 @@ SDValue DAGCombiner::foldBinOpIntoSelect(SDNode *BO) {
       return SDValue();
   }
 
-  return DAG.getSelect(DL, VT, Sel.getOperand(0), NewCT, NewCF, BO->getFlags());
+  return emitSelectLike(DAG, DL, VT, Sel, NewCT, NewCF, BO->getFlags());
 }
 
 static SDValue foldAddSubBoolOfMaskedVal(SDNode *N, const SDLoc &DL,

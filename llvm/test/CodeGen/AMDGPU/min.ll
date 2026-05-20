@@ -2951,7 +2951,7 @@ define amdgpu_kernel void @v_test_umin_ult_i32_multi_use(ptr addrspace(1) %out0,
 ; EG-NEXT:     AND_INT T0.W, KC0[2].Z, literal.x,
 ; EG-NEXT:     SETGT_UINT * T1.W, T1.X, T0.X,
 ; EG-NEXT:    3(4.203895e-45), 0(0.000000e+00)
-; EG-NEXT:     AND_INT T1.W, PS, 1,
+; EG-NEXT:     CNDE_INT T1.W, PS, 0.0, 1,
 ; EG-NEXT:     LSHL * T0.W, PV.W, literal.x,
 ; EG-NEXT:    3(4.203895e-45), 0(0.000000e+00)
 ; EG-NEXT:     LSHL T2.X, PV.W, PS,
@@ -3128,7 +3128,7 @@ define amdgpu_kernel void @v_test_umin_ult_i16_multi_use(ptr addrspace(1) %out0,
 ; EG-NEXT:     AND_INT T0.W, KC0[2].Z, literal.x,
 ; EG-NEXT:     SETGT_UINT * T1.W, T1.X, T0.X,
 ; EG-NEXT:    3(4.203895e-45), 0(0.000000e+00)
-; EG-NEXT:     AND_INT T1.W, PS, 1,
+; EG-NEXT:     CNDE_INT T1.W, PS, 0.0, 1,
 ; EG-NEXT:     LSHL * T0.W, PV.W, literal.x,
 ; EG-NEXT:    3(4.203895e-45), 0(0.000000e+00)
 ; EG-NEXT:     LSHL T0.X, PV.W, PS,
