@@ -1650,14 +1650,10 @@ bool AArch64InstrInfo::analyzeCompare(const MachineInstr &MI, Register &SrcReg,
     return true;
   case AArch64::ANDSWri:
   case AArch64::ANDSXri:
-    // ANDS does not use the same encoding scheme as the others xxxS
-    // instructions.
     SrcReg = MI.getOperand(1).getReg();
     SrcReg2 = 0;
-    CmpMask = ~0;
-    CmpValue = AArch64_AM::decodeLogicalImmediate(
-                   MI.getOperand(2).getImm(),
-                   MI.getOpcode() == AArch64::ANDSWri ? 32 : 64);
+    CmpMask = MI.getOperand(2).getImm();
+    CmpValue = 0;
     return true;
   }
 
@@ -1976,61 +1972,36 @@ bool AArch64InstrInfo::optimizePTestInstr(
   return true;
 }
 
-/// Try to optimize a compare instruction. A compare instruction is an
-/// instruction which produces AArch64::NZCV. It can be truly compare
-/// instruction
-/// when there are no uses of its destination register.
-///
-/// The following steps are tried in order:
-/// 1. Convert CmpInstr into an unconditional version.
-/// 2. Remove CmpInstr if above there is an instruction producing a needed
-///    condition code or an instruction which can be converted into such an
-///    instruction.
-///    Only comparison with zero is supported.
-bool AArch64InstrInfo::optimizeCompareInstr(
-    MachineInstr &CmpInstr, Register SrcReg, Register SrcReg2, int64_t CmpMask,
-    int64_t CmpValue, const MachineRegisterInfo *MRI) const {
-  assert(CmpInstr.getParent());
-  assert(MRI);
+/// If \p Reg is defined by a vreg copy, return the copy source (one level).
+static Register getEffectiveTstSourceReg(Register Reg,
+                                         const MachineRegisterInfo &MRI) {
+  if (!Reg.isVirtual())
+    return Reg;
+  MachineInstr *Def = MRI.getUniqueVRegDef(Reg);
+  if (!Def || !Def->isCopy() || !Def->getOperand(1).isReg())
+    return Reg;
+  Register Src = Def->getOperand(1).getReg();
+  if (!Src.isVirtual())
+    return Reg;
+  return Src;
+}
 
-  // Replace SUBSWrr with SUBWrr if NZCV is not used.
-  int DeadNZCVIdx =
-      CmpInstr.findRegisterDefOperandIdx(AArch64::NZCV, /*TRI=*/nullptr, true);
-  if (DeadNZCVIdx != -1) {
-    if (CmpInstr.definesRegister(AArch64::WZR, /*TRI=*/nullptr) ||
-        CmpInstr.definesRegister(AArch64::XZR, /*TRI=*/nullptr)) {
-      CmpInstr.eraseFromParent();
-      return true;
-    }
-    unsigned Opc = CmpInstr.getOpcode();
-    unsigned NewOpc = convertToNonFlagSettingOpc(CmpInstr);
-    if (NewOpc == Opc)
+/// Identify a plain \c ANDWri/\c ANDXri with the same source and mask as \c ANDS.
+static bool isSuitableForMask(MachineInstr *MI, Register SrcReg, int64_t CmpMask,
+                              bool CommonUse) {
+  if (!MI)
+    return false;
+  switch (MI->getOpcode()) {
+  case AArch64::ANDWri:
+  case AArch64::ANDXri:
+    if (CmpMask != MI->getOperand(2).getImm())
       return false;
-    const MCInstrDesc &MCID = get(NewOpc);
-    CmpInstr.setDesc(MCID);
-    CmpInstr.removeOperand(DeadNZCVIdx);
-    bool succeeded = UpdateOperandRegClass(CmpInstr);
-    (void)succeeded;
-    assert(succeeded && "Some operands reg class are incompatible!");
-    return true;
+    if (SrcReg == MI->getOperand(CommonUse ? 1 : 0).getReg())
+      return true;
+    break;
   }
 
-  if (CmpInstr.getOpcode() == AArch64::PTEST_PP ||
-      CmpInstr.getOpcode() == AArch64::PTEST_PP_ANY ||
-      CmpInstr.getOpcode() == AArch64::PTEST_PP_FIRST)
-    return optimizePTestInstr(&CmpInstr, SrcReg, SrcReg2, MRI);
-
-  if (SrcReg2 != 0)
-    return false;
-
-  // CmpInstr is a Compare instruction if destination register is not used.
-  if (!MRI->use_nodbg_empty(CmpInstr.getOperand(0).getReg()))
-    return false;
-
-  if (CmpValue == 0 && substituteCmpToZero(CmpInstr, SrcReg, *MRI))
-    return true;
-  return (CmpValue == 0 || CmpValue == 1) &&
-         removeCmpToZeroOrOne(CmpInstr, SrcReg, CmpValue, *MRI);
+  return false;
 }
 
 /// Get opcode of S version of Instr.
@@ -2119,6 +2090,196 @@ static unsigned sForm(MachineInstr &Instr) {
   case AArch64::BICXrs:
     return AArch64::BICSXrs;
   }
+}
+
+static bool areCFlagsAliveInSuccessors(const MachineBasicBlock *MBB);
+
+static bool isMachineInstrEarlierInBB(const MachineInstr &Earlier,
+                                      const MachineInstr &Later) {
+  assert(Earlier.getParent() == Later.getParent());
+  for (const MachineInstr &I : *Earlier.getParent()) {
+    if (&I == &Earlier)
+      return true;
+    if (&I == &Later)
+      return false;
+  }
+  llvm_unreachable("instructions not in the same basic block");
+}
+
+static AArch64CC::CondCode findCondCodeUsedByInstr(const MachineInstr &Instr);
+static UsedNZCV getUsedNZCV(AArch64CC::CondCode CC);
+
+/// NZCV consumers after a logical \p ANDS are safe to rely on flags from an
+/// upgraded \p ANDS only when they do not observe C or V (cleared by logical
+/// ANDS) or composite codes that use them. Mirrors ARM forward CPSR scan for TST.
+static bool isSafeNZCVUseAfterMaskedAnds(const MachineInstr &Ands,
+                                         const TargetRegisterInfo &TRI) {
+  const MachineBasicBlock *MBB = Ands.getParent();
+  bool FlagsDeadBeforeUse = false;
+
+  for (const MachineInstr &Instr : instructionsWithoutDebug(
+           std::next(Ands.getIterator()), MBB->instr_end())) {
+    for (const MachineOperand &MO : Instr.operands()) {
+      if (MO.isRegMask() && MO.clobbersPhysReg(AArch64::NZCV)) {
+        FlagsDeadBeforeUse = true;
+        break;
+      }
+    }
+    if (FlagsDeadBeforeUse)
+      break;
+
+    if (Instr.modifiesRegister(AArch64::NZCV, &TRI)) {
+      FlagsDeadBeforeUse = true;
+      break;
+    }
+
+    if (!Instr.readsRegister(AArch64::NZCV, &TRI))
+      continue;
+
+    AArch64CC::CondCode CC = findCondCodeUsedByInstr(Instr);
+    if (CC == AArch64CC::Invalid)
+      return false;
+
+    UsedNZCV Used = getUsedNZCV(CC);
+    if (Used.C || Used.V)
+      return false;
+  }
+
+  if (FlagsDeadBeforeUse)
+    return true;
+
+  return !areCFlagsAliveInSuccessors(MBB);
+}
+
+/// If \p AndMI is a plain \p AND with the same inputs as \p Ands, upgrade it to
+/// \p ANDS and delete the redundant \p Ands (ARM TST-after-AND peephole).
+static bool tryOptimizeRedundantAndsAfterAnd(MachineInstr &Ands,
+                                             MachineInstr &AndMI,
+                                             const AArch64InstrInfo &TII,
+                                             const MachineRegisterInfo &MRI) {
+  if (!MRI.use_nodbg_empty(Ands.getOperand(0).getReg()))
+    return false;
+
+  const TargetRegisterInfo *TRI = &TII.getRegisterInfo();
+
+  if (AndMI.getParent() != Ands.getParent() ||
+      !isMachineInstrEarlierInBB(AndMI, Ands))
+    return false;
+
+  if (areCFlagsAccessedBetweenInstrs(AndMI.getIterator(), Ands.getIterator(),
+                                     TRI))
+    return false;
+
+  if (!isSafeNZCVUseAfterMaskedAnds(Ands, *TRI))
+    return false;
+
+  unsigned NewOpc = sForm(AndMI);
+  if (NewOpc != AArch64::ANDSWri && NewOpc != AArch64::ANDSXri)
+    return false;
+
+  AndMI.setDesc(TII.get(NewOpc));
+  Ands.eraseFromParent();
+  bool Succeeded = UpdateOperandRegClass(AndMI);
+  (void)Succeeded;
+  assert(Succeeded && "Operands have incompatible register classes!");
+  AndMI.addRegisterDefined(AArch64::NZCV, TRI);
+  if (AndMI.registerDefIsDead(AArch64::NZCV, TRI)) {
+    for (unsigned I = 0, E = AndMI.getNumOperands(); I != E; ++I) {
+      MachineOperand &MO = AndMI.getOperand(I);
+      if (MO.isReg() && MO.isDef() && MO.getReg() == AArch64::NZCV) {
+        MO.setIsDead(false);
+        break;
+      }
+    }
+  }
+  return true;
+}
+
+/// Try to optimize a compare instruction. A compare instruction is an
+/// instruction which produces AArch64::NZCV. It can be truly compare
+/// instruction
+/// when there are no uses of its destination register.
+///
+/// The following steps are tried in order:
+/// 1. Convert CmpInstr into an unconditional version.
+/// 2. Remove CmpInstr if above there is an instruction producing a needed
+///    condition code or an instruction which can be converted into such an
+///    instruction.
+///    Only comparison with zero is supported.
+bool AArch64InstrInfo::optimizeCompareInstr(
+    MachineInstr &CmpInstr, Register SrcReg, Register SrcReg2, int64_t CmpMask,
+    int64_t CmpValue, const MachineRegisterInfo *MRI) const {
+  assert(CmpInstr.getParent());
+  assert(MRI);
+
+  // Replace SUBSWrr with SUBWrr if NZCV is not used.
+  int DeadNZCVIdx =
+      CmpInstr.findRegisterDefOperandIdx(AArch64::NZCV, /*TRI=*/nullptr, true);
+  if (DeadNZCVIdx != -1) {
+    if (CmpInstr.definesRegister(AArch64::WZR, /*TRI=*/nullptr) ||
+        CmpInstr.definesRegister(AArch64::XZR, /*TRI=*/nullptr)) {
+      CmpInstr.eraseFromParent();
+      return true;
+    }
+    unsigned Opc = CmpInstr.getOpcode();
+    unsigned NewOpc = convertToNonFlagSettingOpc(CmpInstr);
+    if (NewOpc == Opc)
+      return false;
+    const MCInstrDesc &MCID = get(NewOpc);
+    CmpInstr.setDesc(MCID);
+    CmpInstr.removeOperand(DeadNZCVIdx);
+    bool succeeded = UpdateOperandRegClass(CmpInstr);
+    (void)succeeded;
+    assert(succeeded && "Some operands reg class are incompatible!");
+    return true;
+  }
+
+  // Masked compares (ANDS/tst) sometimes use the same register as a prior
+  // 'and'.
+  if (CmpMask != ~0) {
+    // TST/ANDS is single-source; two-operand compares never set CmpMask.
+    if (SrcReg2)
+      return false;
+
+    Register MaskReg = getEffectiveTstSourceReg(SrcReg, *MRI);
+    MachineInstr *MI = MRI->getUniqueVRegDef(MaskReg);
+    if (!isSuitableForMask(MI, MaskReg, CmpMask, false)) {
+      MI = nullptr;
+      for (MachineRegisterInfo::use_instr_iterator
+               UI = MRI->use_instr_begin(MaskReg),
+               UE = MRI->use_instr_end();
+           UI != UE; ++UI) {
+        if (UI->getParent() != CmpInstr.getParent())
+          continue;
+        MachineInstr *PotentialAND = &*UI;
+        if (!isSuitableForMask(PotentialAND, MaskReg, CmpMask, true))
+          continue;
+        MI = PotentialAND;
+        break;
+      }
+      if (!MI)
+        return false;
+    }
+
+    return tryOptimizeRedundantAndsAfterAnd(CmpInstr, *MI, *this, *MRI);
+  }
+
+  if (CmpInstr.getOpcode() == AArch64::PTEST_PP ||
+      CmpInstr.getOpcode() == AArch64::PTEST_PP_ANY ||
+      CmpInstr.getOpcode() == AArch64::PTEST_PP_FIRST)
+    return optimizePTestInstr(&CmpInstr, SrcReg, SrcReg2, MRI);
+
+  if (SrcReg2 != 0)
+    return false;
+
+  // CmpInstr is a Compare instruction if destination register is not used.
+  if (!MRI->use_nodbg_empty(CmpInstr.getOperand(0).getReg()))
+    return false;
+
+  if (CmpValue == 0 && substituteCmpToZero(CmpInstr, SrcReg, *MRI))
+    return true;
+  return (CmpValue == 0 || CmpValue == 1) &&
+         removeCmpToZeroOrOne(CmpInstr, SrcReg, CmpValue, *MRI);
 }
 
 /// Check if AArch64::NZCV should be alive in successors of MBB.

@@ -1,0 +1,49 @@
+# RUN: llc -mtriple=aarch64-- -run-pass=peephole-opt -o - %s | FileCheck %s
+
+# AND + ANDS (tst) with the same source and mask: promote AND to ANDS and drop ANDS.
+
+---
+name:            peephole_ands_tst
+tracksRegLiveness: true
+body:             |
+  bb.0:
+    liveins: $w0
+    successors: %bb.1
+
+    ; CHECK-LABEL: name: peephole_ands_tst
+    ; CHECK: liveins: $w0
+    ; CHECK-NOT: ANDWri
+    ; CHECK: ANDSWri
+    ; CHECK-NOT: ANDSWri
+    ; CHECK-NEXT: Bcc
+    %0:gpr32 = COPY $w0
+    %1:gpr32sp = ANDWri %0, 0
+    dead $wzr = ANDSWri %0, 0, implicit-def $nzcv
+    Bcc 1, %bb.1, implicit $nzcv
+
+  bb.1:
+    RET_ReallyLR
+
+...
+---
+name:            peephole_ands_tst_copy
+tracksRegLiveness: true
+body:             |
+  bb.0:
+    liveins: $w0, $w1
+    successors: %bb.1
+
+    ; CHECK-LABEL: name: peephole_ands_tst_copy
+    ; CHECK-NOT: ANDWri
+    ; CHECK: ANDSWri
+    ; CHECK-NOT: ANDSWri
+    %2:gpr32 = COPY $w1
+    %0:gpr32 = COPY %2
+    %1:gpr32sp = ANDWri %2, 0
+    dead $wzr = ANDSWri %0, 0, implicit-def $nzcv
+    Bcc 1, %bb.1, implicit $nzcv
+
+  bb.1:
+    RET_ReallyLR
+
+...
