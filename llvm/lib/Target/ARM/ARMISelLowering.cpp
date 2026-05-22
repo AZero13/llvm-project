@@ -11731,6 +11731,14 @@ ARMTargetLowering::EmitLowered__dbzchk(MachineInstr &MI,
   return ContBB;
 }
 
+/// Check if ARM::CPSR should be alive in successors of MBB.
+static bool areCFlagsAliveInSuccessors(const MachineBasicBlock *MBB) {
+  for (auto *BB : MBB->successors())
+    if (BB->isLiveIn(ARM::CPSR))
+      return true;
+  return false;
+}
+
 // The CPSR operand of SelectItr might be missing a kill marker
 // because there were multiple uses of CPSR, and ISel didn't know
 // which to mark. Figure out whether SelectItr should have had a
@@ -11752,9 +11760,8 @@ static bool checkAndUpdateCPSRKill(MachineBasicBlock::iterator SelectItr,
   // If we hit the end of the block, check whether CPSR is live into a
   // successor.
   if (miI == BB->end()) {
-    for (MachineBasicBlock *Succ : BB->successors())
-      if (Succ->isLiveIn(ARM::CPSR))
-        return false;
+    if (areCFlagsAliveInSuccessors(BB))
+      return false;
   }
 
   // We found a def, or hit the end of the basic block and CPSR wasn't live

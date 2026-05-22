@@ -2824,6 +2824,92 @@ static bool isOptimizeCompareCandidate(MachineInstr *MI, bool &IsThumb1) {
   }
 }
 
+/// Check if ARM::CPSR should be alive in successors of MBB.
+static bool areCFlagsAliveInSuccessors(const MachineBasicBlock *MBB) {
+  for (auto *BB : MBB->successors())
+    if (BB->isLiveIn(ARM::CPSR))
+      return true;
+  return false;
+}
+
+/// Check if CmpInstr can be substituted by MI.
+///
+/// CmpInstr can be substituted:
+/// - CmpInstr is either 'ADDS %vreg, 0' or 'SUBS %vreg, 0'
+/// - and, MI and CmpInstr are from the same MachineBB
+/// - and, condition flags are not alive in successors of the CmpInstr parent
+/// - and, if MI opcode is the S form there must be no defs of flags between
+///        MI and CmpInstr
+///        or if MI opcode is not the S form there must be neither defs of flags
+///        nor uses of flags between MI and CmpInstr.
+/// - and, if C/V flags are not used after CmpInstr
+///        or if N flag is used but MI produces poison value if signed overflow
+///        occurs.
+static bool canInstrSubstituteCmpInstr(MachineInstr &MI, MachineInstr &CmpInstr,
+                                       const TargetRegisterInfo &TRI) {
+  // NOTE this assertion guarantees that MI.getOpcode() is add or subtraction
+  // that may or may not set flags.
+  assert(sForm(MI) != AArch64::INSTRUCTION_LIST_END);
+
+  const unsigned CmpOpcode = CmpInstr.getOpcode();
+  if (!isADDSRegImm(CmpOpcode) && !isSUBSRegImm(CmpOpcode))
+    return false;
+
+  assert((CmpInstr.getOperand(2).isImm() &&
+          CmpInstr.getOperand(2).getImm() == 0) &&
+         "Caller guarantees that CmpInstr compares with constant 0");
+
+  std::optional<UsedNZCV> NZVCUsed = examineCFlagsUse(MI, CmpInstr, TRI);
+  if (!NZVCUsed || NZVCUsed->C)
+    return false;
+
+  // CmpInstr is either 'ADDS %vreg, 0' or 'SUBS %vreg, 0', and MI is either
+  // '%vreg = add ...' or '%vreg = sub ...'.
+  // Condition flag V is used to indicate signed overflow.
+  // 1) MI and CmpInstr set N and V to the same value.
+  // 2) If MI is add/sub with no-signed-wrap, it produces a poison value when
+  //    signed overflow occurs, so CmpInstr could still be simplified away.
+  // Note that Ands and Bics instructions always clear the V flag.
+  if (NZVCUsed->V && !MI.getFlag(MachineInstr::NoSWrap) && !isANDOpcode(MI))
+    return false;
+
+  AccessKind AccessToCheck = AK_Write;
+  if (sForm(MI) != MI.getOpcode())
+    AccessToCheck = AK_All;
+  return !areCFlagsAccessedBetweenInstrs(&MI, &CmpInstr, &TRI, AccessToCheck);
+}
+
+/// Substitute an instruction comparing to zero with another instruction
+/// which produces needed condition flags.
+///
+/// Return true on success.
+bool ARMBaseInstrInfo::substituteCmpToZero(
+    MachineInstr &CmpInstr, unsigned SrcReg,
+    const MachineRegisterInfo &MRI) const {
+  // Get the unique definition of SrcReg.
+  MachineInstr *MI = MRI.getUniqueVRegDef(SrcReg);
+  if (!MI)
+    return false;
+
+  const TargetRegisterInfo &TRI = getRegisterInfo();
+
+  unsigned NewOpc = sForm(*MI);
+  if (NewOpc == AArch64::INSTRUCTION_LIST_END)
+    return false;
+
+  if (!canInstrSubstituteCmpInstr(*MI, CmpInstr, TRI))
+    return false;
+
+  // Update the instruction to set NZCV.
+  MI->setDesc(get(NewOpc));
+  CmpInstr.eraseFromParent();
+  bool succeeded = UpdateOperandRegClass(*MI);
+  (void)succeeded;
+  assert(succeeded && "Some operands reg class are incompatible!");
+  MI->addRegisterDefined(AArch64::NZCV, &TRI);
+  return true;
+}
+
 /// optimizeCompareInstr - Convert the instruction supplying the argument to the
 /// comparison into one that sets the zero bit in the flags register;
 /// Remove a redundant Compare instruction if an earlier instruction can set the
@@ -2834,6 +2920,10 @@ static bool isOptimizeCompareCandidate(MachineInstr *MI, bool &IsThumb1) {
 bool ARMBaseInstrInfo::optimizeCompareInstr(
     MachineInstr &CmpInstr, Register SrcReg, Register SrcReg2, int64_t CmpMask,
     int64_t CmpValue, const MachineRegisterInfo *MRI) const {
+
+  if (CmpValue == 0 && substituteCmpToZero(CmpInstr, SrcReg, *MRI))
+    return true;
+
   // Get the unique definition of SrcReg.
   MachineInstr *MI = MRI->getUniqueVRegDef(SrcReg);
   if (!MI) return false;
@@ -3084,10 +3174,8 @@ bool ARMBaseInstrInfo::optimizeCompareInstr(
   // If CPSR is not killed nor re-defined, we should check whether it is
   // live-out. If it is live-out, do not optimize.
   if (!isSafe) {
-    MachineBasicBlock *MBB = CmpInstr.getParent();
-    for (MachineBasicBlock *Succ : MBB->successors())
-      if (Succ->isLiveIn(ARM::CPSR))
-        return false;
+    if (areCFlagsAliveInSuccessors(CmpInstr.getParent()))
+      return false;
   }
 
   // Toggle the optional operand to CPSR (if it exists - in Thumb1 we always
