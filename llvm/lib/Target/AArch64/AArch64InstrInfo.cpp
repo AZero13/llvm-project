@@ -18,6 +18,7 @@
 #include "MCTargetDesc/AArch64AddressingModes.h"
 #include "MCTargetDesc/AArch64MCTargetDesc.h"
 #include "Utils/AArch64BaseInfo.h"
+#include "Utils/AArch64PeepholeUtils.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallSet.h"
@@ -1972,20 +1973,6 @@ bool AArch64InstrInfo::optimizePTestInstr(
   return true;
 }
 
-/// If \p Reg is defined by a vreg copy, return the copy source (one level).
-static Register getEffectiveTstSourceReg(Register Reg,
-                                         const MachineRegisterInfo &MRI) {
-  if (!Reg.isVirtual())
-    return Reg;
-  MachineInstr *Def = MRI.getUniqueVRegDef(Reg);
-  if (!Def || !Def->isCopy() || !Def->getOperand(1).isReg())
-    return Reg;
-  Register Src = Def->getOperand(1).getReg();
-  if (!Src.isVirtual())
-    return Reg;
-  return Src;
-}
-
 /// Identify a plain \c ANDWri/\c ANDXri with the same source and mask as \c ANDS.
 static bool isSuitableForMask(MachineInstr *MI, Register SrcReg, int64_t CmpMask,
                               bool CommonUse) {
@@ -2241,7 +2228,7 @@ bool AArch64InstrInfo::optimizeCompareInstr(
     if (SrcReg2)
       return false;
 
-    Register MaskReg = getEffectiveTstSourceReg(SrcReg, *MRI);
+    Register MaskReg = lookThroughCopies(SrcReg, *MRI);
     MachineInstr *MI = MRI->getUniqueVRegDef(MaskReg);
     if (!isSuitableForMask(MI, MaskReg, CmpMask, false)) {
       MI = nullptr;
