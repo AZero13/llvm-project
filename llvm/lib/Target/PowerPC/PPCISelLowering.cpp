@@ -17678,7 +17678,8 @@ static SDValue PerformAddeSubeCombine(SDNode *N,
   SDValue RHS = N->getOperand(1);
   if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(RHS)) {
     int64_t imm = C->getSExtValue();
-    if (imm < 0) {
+    // Leave -1 for TableGen's addme; other negatives use subfe via SUBE(~imm, …).
+    if (imm < 0 && imm != -1) {
       SDLoc DL(N);
       EVT VT = N->getValueType(0);
 
