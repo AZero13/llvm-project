@@ -17666,6 +17666,33 @@ static SDValue combineXorSelectCC(SDNode *N, SelectionDAG &DAG) {
       0);
 }
 
+static SDValue PerformAddeSubeCombine(SDNode *N,
+                                      TargetLowering::DAGCombinerInfo &DCI) {
+  // ADDE: RT = RA + RB + CA.  SUBE maps to subfe (PPCsube RB, RA): RT = RA + ~RB + CA.
+  // ADDE(LHS, imm, C) with imm < 0 becomes SUBE(~imm, LHS, C) so subfe can use RB = ~imm.
+  // (subfe/adde only take registers; constants are materialized via addi/etc. first.)
+  if (N->getOpcode() != PPCISD::ADDE)
+    return SDValue();
+
+  SelectionDAG &DAG = DCI.DAG;
+  SDValue RHS = N->getOperand(1);
+  if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(RHS)) {
+    int64_t imm = C->getSExtValue();
+    if (imm < 0) {
+      SDLoc DL(N);
+      EVT VT = N->getValueType(0);
+
+      // The with-carry-in form matches bitwise not instead of the negation.
+      // Effectively, the inverse interpretation of the carry flag already
+      // accounts for part of the negation.
+      SDValue NotImm = DAG.getConstant(~imm, DL, VT);
+      return DAG.getNode(PPCISD::SUBE, DL, N->getVTList(), NotImm,
+                         N->getOperand(0), N->getOperand(2));
+    }
+  }
+  return SDValue();
+}
+
 SDValue PPCTargetLowering::PerformDAGCombine(SDNode *N,
                                              DAGCombinerInfo &DCI) const {
   SelectionDAG &DAG = DCI.DAG;
@@ -17730,6 +17757,8 @@ SDValue PPCTargetLowering::PerformDAGCombine(SDNode *N,
         return N->getOperand(0);
     }
     break;
+  case PPCISD::ADDE:
+    return PerformAddeSubeCombine(N, DCI);
   case ISD::SIGN_EXTEND:
     if (SDValue SECC = combineSignExtendSetCC(N, DCI))
       return SECC;

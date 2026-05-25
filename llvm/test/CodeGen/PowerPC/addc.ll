@@ -27,7 +27,7 @@ entry:
         ret i64 %tmp.1
 ; CHECK-LABEL: add_l_m5:
 ; CHECK: addic 4, 4, -5
-; CHECK: addme 3, 3
+; CHECK: subfze 3, 3
 ; CHECK: blr
 }
 

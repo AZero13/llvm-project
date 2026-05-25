@@ -13094,7 +13094,7 @@ static SDValue PerformAddeSubeCombine(SDNode *N,
     SelectionDAG &DAG = DCI.DAG;
     SDValue RHS = N->getOperand(1);
     if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(RHS)) {
-      int64_t imm = C->getSExtValue();
+      int32_t imm = C->getSExtValue();
       if (imm < 0) {
         SDLoc DL(N);
 
