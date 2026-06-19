@@ -2400,9 +2400,15 @@ MachineInstrBuilder llvm::BuildMI(MachineFunction &MF, const DebugLoc &DL,
     assert(DebugOps.size() == 1 &&
            "DBG_VALUE must contain exactly one debug operand");
     MachineOperand DebugOp = DebugOps[0];
-    if (DebugOp.isReg())
-      return BuildMI(MF, DL, MCID, IsIndirect, DebugOp.getReg(), Variable,
-                     Expr);
+    if (DebugOp.isReg()) {
+      auto MIB = BuildMI(MF, DL, MCID).addReg(DebugOp.getReg(), RegState::Debug,
+                                             DebugOp.getSubReg());
+      if (IsIndirect)
+        MIB.addImm(0U);
+      else
+        MIB.addReg(0U);
+      return MIB.addMetadata(Variable).addMetadata(Expr);
+    }
 
     auto MIB = BuildMI(MF, DL, MCID).add(DebugOp);
     if (IsIndirect)
@@ -2416,7 +2422,7 @@ MachineInstrBuilder llvm::BuildMI(MachineFunction &MF, const DebugLoc &DL,
   MIB.addMetadata(Variable).addMetadata(Expr);
   for (const MachineOperand &DebugOp : DebugOps)
     if (DebugOp.isReg())
-      MIB.addReg(DebugOp.getReg());
+      MIB.addReg(DebugOp.getReg(), RegState::Debug, DebugOp.getSubReg());
     else
       MIB.add(DebugOp);
   return MIB;
