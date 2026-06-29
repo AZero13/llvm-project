@@ -2387,15 +2387,21 @@ void CodeGenFunction::EmitCXXConstructorCall(
   // about to overwrite the vptrs anyway.
   // We also have to make sure if we can refer to vtable:
   // - Otherwise we can refer to vtable if it's safe to speculatively emit.
-  // FIXME: If vtable is used by ctor/dtor, or if vtable is external and we are
-  // sure that definition of vtable is not hidden,
-  // then we are always safe to refer to it.
+  // - If vtable is generated in this TU (used by ctor/dtor), or if vtable is 
+  //   external and we are sure that definition of vtable is not hidden,
+  //   then we are always safe to refer to it.
   // FIXME: It looks like InstCombine is very inefficient on dealing with
   // assumes. Make assumption loads require -fstrict-vtable-pointers
   // temporarily.
+  bool IsVTableExternal = CGM.getVTables().isVTableExternal(ClassDecl);
+  bool VTableIsExternalAndNotHidden =
+      IsVTableExternal &&
+      ClassDecl->getVisibility() == DefaultVisibility;
+
   if (CGM.getCodeGenOpts().OptimizationLevel > 0 &&
       ClassDecl->isDynamicClass() && Type != Ctor_Base &&
-      CGM.getCXXABI().canSpeculativelyEmitVTable(ClassDecl) &&
+      (CGM.getCXXABI().canSpeculativelyEmitVTable(ClassDecl) ||
+       !IsVTableExternal || VTableIsExternalAndNotHidden) &&
       CGM.getCodeGenOpts().StrictVTablePointers)
     EmitVTableAssumptionLoads(ClassDecl, This);
 }
