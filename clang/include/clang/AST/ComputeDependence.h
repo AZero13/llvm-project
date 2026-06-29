@@ -50,6 +50,7 @@ class BlockExpr;
 class AsTypeExpr;
 class DeclRefExpr;
 class RecoveryExpr;
+class DesignatedInitUpdateExpr;
 class CXXRewrittenBinaryOperator;
 class CXXStdInitializerListExpr;
 class CXXTypeidExpr;
@@ -142,6 +143,7 @@ ExprDependence computeDependence(BlockExpr *E,
 ExprDependence computeDependence(AsTypeExpr *E);
 ExprDependence computeDependence(DeclRefExpr *E, const ASTContext &Ctx);
 ExprDependence computeDependence(RecoveryExpr *E);
+ExprDependence computeDependence(DesignatedInitUpdateExpr *E);
 ExprDependence computeDependence(CXXRewrittenBinaryOperator *E);
 ExprDependence computeDependence(CXXStdInitializerListExpr *E);
 ExprDependence computeDependence(CXXTypeidExpr *E);

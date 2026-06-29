@@ -710,6 +710,10 @@ ExprDependence clang::computeDependence(InitListExpr *E) {
   return D;
 }
 
+ExprDependence clang::computeDependence(DesignatedInitUpdateExpr *E) {
+  return E->getBase()->getDependence() | E->getUpdater()->getDependence();
+}
+
 ExprDependence clang::computeDependence(ShuffleVectorExpr *E) {
   auto D = toExprDependenceForImpliedType(E->getType()->getDependence());
   for (auto *C : ArrayRef(E->getSubExprs(), E->getNumSubExprs()))
