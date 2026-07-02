@@ -1473,8 +1473,8 @@ define i32 @test5_use3(i32 %x, i32 %y) {
 
 define i8 @ashr_bitwidth_mask(i8 %x, i8 %y) {
 ; CHECK-LABEL: @ashr_bitwidth_mask(
-; CHECK-NEXT:    [[SIGN:%.*]] = ashr i8 [[X:%.*]], 7
-; CHECK-NEXT:    [[R:%.*]] = or i8 [[SIGN]], [[Y:%.*]]
+; CHECK-NEXT:    [[ISNEG_INV:%.*]] = icmp sgt i8 [[X:%.*]], -1
+; CHECK-NEXT:    [[R:%.*]] = select i1 [[ISNEG_INV]], i8 [[Y:%.*]], i8 -1
 ; CHECK-NEXT:    ret i8 [[R]]
 ;
   %sign = ashr i8 %x, 7
@@ -1485,8 +1485,8 @@ define i8 @ashr_bitwidth_mask(i8 %x, i8 %y) {
 define <2 x i8> @ashr_bitwidth_mask_vec_commute(<2 x i8> %x, <2 x i8> %py) {
 ; CHECK-LABEL: @ashr_bitwidth_mask_vec_commute(
 ; CHECK-NEXT:    [[Y:%.*]] = mul <2 x i8> [[PY:%.*]], <i8 42, i8 2>
-; CHECK-NEXT:    [[SIGN:%.*]] = ashr <2 x i8> [[X:%.*]], splat (i8 7)
-; CHECK-NEXT:    [[R:%.*]] = or <2 x i8> [[Y]], [[SIGN]]
+; CHECK-NEXT:    [[ISNEG_INV:%.*]] = icmp sgt <2 x i8> [[X:%.*]], splat (i8 -1)
+; CHECK-NEXT:    [[R:%.*]] = select <2 x i1> [[ISNEG_INV]], <2 x i8> [[Y]], <2 x i8> splat (i8 -1)
 ; CHECK-NEXT:    ret <2 x i8> [[R]]
 ;
   %y = mul <2 x i8> %py, <i8 42, i8 2>      ; thwart complexity-based ordering
@@ -2360,9 +2360,7 @@ define i32 @signum_i32_or_wrong_sh_amt(i32 %x) {
 define i32 @signum_i32_or_wrong_pred(i32 %x) {
 ; CHECK-LABEL: @signum_i32_or_wrong_pred(
 ; CHECK-NEXT:    [[SIGNBIT:%.*]] = ashr i32 [[X:%.*]], 31
-; CHECK-NEXT:    [[X_LOBIT:%.*]] = lshr i32 [[X]], 31
-; CHECK-NEXT:    [[R:%.*]] = or i32 [[SIGNBIT]], [[X_LOBIT]]
-; CHECK-NEXT:    ret i32 [[R]]
+; CHECK-NEXT:    ret i32 [[SIGNBIT]]
 ;
   %signbit = ashr i32 %x, 31
   %slt0 = icmp slt i32 %x, 0
@@ -2375,9 +2373,8 @@ define i32 @signum_i32_or_wrong_pred(i32 %x) {
 
 define i32 @signum_i32_or_wrong_ext(i32 %x) {
 ; CHECK-LABEL: @signum_i32_or_wrong_ext(
-; CHECK-NEXT:    [[SIGNBIT:%.*]] = ashr i32 [[X:%.*]], 31
-; CHECK-NEXT:    [[SGT0:%.*]] = icmp sgt i32 [[X]], 0
-; CHECK-NEXT:    [[R:%.*]] = select i1 [[SGT0]], i32 -1, i32 [[SIGNBIT]]
+; CHECK-NEXT:    [[NARROW:%.*]] = icmp ne i32 [[X:%.*]], 0
+; CHECK-NEXT:    [[R:%.*]] = sext i1 [[NARROW]] to i32
 ; CHECK-NEXT:    ret i32 [[R]]
 ;
   %signbit = ashr i32 %x, 31

@@ -208,7 +208,12 @@ define i1 @test4c(i64 %a) {
 
 define <2 x i1> @test4c_vec(<2 x i64> %a) {
 ; CHECK-LABEL: @test4c_vec(
-; CHECK-NEXT:    [[C:%.*]] = icmp slt <2 x i64> [[A:%.*]], splat (i64 1)
+; CHECK-NEXT:    [[NA:%.*]] = sub <2 x i64> zeroinitializer, [[A:%.*]]
+; CHECK-NEXT:    [[R:%.*]] = lshr <2 x i64> [[NA]], splat (i64 63)
+; CHECK-NEXT:    [[ISNEG_INV:%.*]] = icmp sgt <2 x i64> [[A]], splat (i64 -1)
+; CHECK-NEXT:    [[SIGNUM:%.*]] = select <2 x i1> [[ISNEG_INV]], <2 x i64> [[R]], <2 x i64> splat (i64 -1)
+; CHECK-NEXT:    [[SIGNUM_TRUNC:%.*]] = trunc nsw <2 x i64> [[SIGNUM]] to <2 x i32>
+; CHECK-NEXT:    [[C:%.*]] = icmp slt <2 x i32> [[SIGNUM_TRUNC]], splat (i32 1)
 ; CHECK-NEXT:    ret <2 x i1> [[C]]
 ;
   %l = ashr <2 x i64> %a, <i64 63, i64 63>

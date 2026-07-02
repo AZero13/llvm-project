@@ -29,7 +29,7 @@ define i32 @ashr_or_mul_to_abs2(i32 %X) {
 define i32 @ashr_or_mul_to_abs3(i32 %PX) {
 ; CHECK-LABEL: @ashr_or_mul_to_abs3(
 ; CHECK-NEXT:    [[X:%.*]] = sdiv i32 42, [[PX:%.*]]
-; CHECK-NEXT:    [[I2:%.*]] = call i32 @llvm.abs.i32(i32 [[X]], i1 false)
+; CHECK-NEXT:    [[I2:%.*]] = call i32 @llvm.abs.i32(i32 [[X]], i1 true)
 ; CHECK-NEXT:    ret i32 [[I2]]
 ;
   %X = sdiv i32 42, %PX ; thwart complexity-based canonicalization
@@ -90,8 +90,8 @@ define i32 @ashr_or_mul_to_abs_neg(i32 %X) {
 
 define i32 @ashr_or_mul_to_abs_neg2(i32 %X) {
 ; CHECK-LABEL: @ashr_or_mul_to_abs_neg2(
-; CHECK-NEXT:    [[I:%.*]] = ashr i32 [[X:%.*]], 31
-; CHECK-NEXT:    [[I1:%.*]] = or i32 [[I]], 2
+; CHECK-NEXT:    [[ISNEG_INV:%.*]] = icmp sgt i32 [[X:%.*]], -1
+; CHECK-NEXT:    [[I1:%.*]] = select i1 [[ISNEG_INV]], i32 2, i32 -1
 ; CHECK-NEXT:    [[I2:%.*]] = mul nsw i32 [[I1]], [[X]]
 ; CHECK-NEXT:    ret i32 [[I2]]
 ;
@@ -103,9 +103,9 @@ define i32 @ashr_or_mul_to_abs_neg2(i32 %X) {
 
 define i32 @ashr_or_mul_to_abs_neg3(i32 %X, i32 %Y) {
 ; CHECK-LABEL: @ashr_or_mul_to_abs_neg3(
-; CHECK-NEXT:    [[I:%.*]] = ashr i32 [[X:%.*]], 31
-; CHECK-NEXT:    [[I1:%.*]] = or i32 [[I]], 1
-; CHECK-NEXT:    [[I2:%.*]] = mul nsw i32 [[I1]], [[Y:%.*]]
+; CHECK-NEXT:    [[TMP1:%.*]] = sub nsw i32 0, [[Y:%.*]]
+; CHECK-NEXT:    [[ISNEG_INV1:%.*]] = icmp slt i32 [[X:%.*]], 0
+; CHECK-NEXT:    [[I2:%.*]] = select i1 [[ISNEG_INV1]], i32 [[TMP1]], i32 [[Y]]
 ; CHECK-NEXT:    ret i32 [[I2]]
 ;
   %i = ashr i32 %X, 31
