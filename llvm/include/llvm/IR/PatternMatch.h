@@ -3188,7 +3188,13 @@ template <typename Opnd_t> struct Signum_match {
     auto RHS = m_LShr(m_Neg(m_Deferred(Op)), m_SpecificInt(ShiftWidth));
     auto Signum = m_c_Or(LHS, RHS);
 
-    return Signum.match(V) && Val.match(Op);
+    if (Signum.match(V) && Val.match(Op))
+      return true;
+
+    if (m_Intrinsic<Intrinsic::scmp>(m_Value(Op), m_Zero()).match(V))
+      return Val.match(Op);
+
+    return false;
   }
 };
 

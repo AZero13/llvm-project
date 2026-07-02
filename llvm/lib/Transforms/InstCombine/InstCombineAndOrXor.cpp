@@ -4211,6 +4211,20 @@ Instruction *InstCombinerImpl::visitOr(BinaryOperator &I) {
     return BinaryOperator::CreateMul(X, IncrementY);
   }
 
+  // signum: or (ashr X, BW-1), (lshr (-X), BW-1) --> scmp(X, 0)
+  {
+    Value *X;
+    unsigned BitWidth = Ty->getScalarSizeInBits();
+    if (match(&I,
+              m_c_Or(m_AShr(m_Value(X), m_SpecificIntAllowPoison(BitWidth - 1)),
+                     m_LShr(m_Neg(m_Deferred(X)),
+                            m_SpecificIntAllowPoison(BitWidth - 1)))) &&
+        (Op0->hasOneUse() || Op1->hasOneUse()))
+      return replaceInstUsesWith(
+          I, Builder.CreateIntrinsic(Ty, Intrinsic::scmp,
+                                     {X, Constant::getNullValue(Ty)}));
+  }
+
   // (iN X s>> (N-1)) | Y --> (X s< 0) ? -1 : Y -- with optional sext
   if (match(&I, m_c_Or(m_OneUse(m_SExtOrSelf(
                            m_AShr(m_Value(X), m_APIntAllowPoison(ShiftC)))),
@@ -4223,8 +4237,8 @@ Instruction *InstCombinerImpl::visitOr(BinaryOperator &I) {
 
   // If there's a 'not' of the shifted value, swap the select operands:
   // ~(iN X s>> (N-1)) | Y --> (X s< 0) ? Y : -1 -- with optional sext
-  if (match(&I, m_c_Or(m_OneUse(m_SExtOrSelf(m_Not(
-                           m_AShr(m_Value(X), m_APIntAllowPoison(ShiftC))))),
+  if (match(&I, m_c_Or(m_OneUse(m_SExtOrSelf(
+                           m_Not(m_AShr(m_Value(X), m_APIntAllowPoison(ShiftC))))),
                        m_Value(Y))) &&
       *ShiftC == X->getType()->getScalarSizeInBits() - 1) {
     Value *IsNeg = Builder.CreateIsNeg(X, "isneg");
