@@ -2447,6 +2447,40 @@ Instruction *InstCombinerImpl::foldSelectInstWithICmp(SelectInst &SI,
   if (Value *V = foldSelectICmpMinMax(ICI, TrueVal, FalseVal, Builder, SQ))
     return replaceInstUsesWith(SI, V);
 
+  // (X < 0) ? P : SMIN(X, P) --> UMIN(X, P) iff P >= 0
+  // (X < 0) ? SMAX(X, N) : N --> UMAX(X, N) iff N <= 0
+  if (Pred == ICmpInst::ICMP_SLT && match(CmpRHS, m_Zero())) {
+    if (match(FalseVal, m_c_SMin(m_Specific(CmpLHS), m_Specific(TrueVal)))) {
+      if (isKnownNonNegative(TrueVal, SQ.getWithInstruction(&SI))) {
+        return replaceInstUsesWith(
+            SI, Builder.CreateBinaryIntrinsic(Intrinsic::umin, CmpLHS, TrueVal));
+      }
+    }
+    if (match(TrueVal, m_c_SMax(m_Specific(CmpLHS), m_Specific(FalseVal)))) {
+      if (computeConstantRange(FalseVal, /*ForSigned=*/true,
+                               SQ.getWithInstruction(&SI)).getSignedMax().isNonPositive()) {
+        return replaceInstUsesWith(
+            SI, Builder.CreateBinaryIntrinsic(Intrinsic::umax, CmpLHS, FalseVal));
+      }
+    }
+  } else if (Pred == ICmpInst::ICMP_SGT && match(CmpRHS, m_AllOnes())) {
+    // (X > -1) ? SMIN(X, P) : P --> UMIN(X, P) iff P >= 0
+    if (match(TrueVal, m_c_SMin(m_Specific(CmpLHS), m_Specific(FalseVal)))) {
+      if (isKnownNonNegative(FalseVal, SQ.getWithInstruction(&SI))) {
+        return replaceInstUsesWith(
+            SI, Builder.CreateBinaryIntrinsic(Intrinsic::umin, CmpLHS, FalseVal));
+      }
+    }
+    // (X > -1) ? N : SMAX(X, N) --> UMAX(X, N) iff N <= 0
+    if (match(FalseVal, m_c_SMax(m_Specific(CmpLHS), m_Specific(TrueVal)))) {
+      if (computeConstantRange(TrueVal, /*ForSigned=*/true,
+                               SQ.getWithInstruction(&SI)).getSignedMax().isNonPositive()) {
+        return replaceInstUsesWith(
+            SI, Builder.CreateBinaryIntrinsic(Intrinsic::umax, CmpLHS, TrueVal));
+      }
+    }
+  }
+
   if (Instruction *V =
           foldSelectICmpAndAnd(SI.getType(), ICI, TrueVal, FalseVal, Builder))
     return V;
