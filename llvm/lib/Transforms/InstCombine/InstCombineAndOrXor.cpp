@@ -947,7 +947,7 @@ static Value *foldIsPowerOf2OrZero(ICmpInst *Cmp0, ICmpInst *Cmp1, bool IsAnd,
                                    InstCombinerImpl &IC) {
   CmpPredicate Pred0, Pred1;
   Value *X;
-  if (!match(Cmp0, m_ICmp(Pred0, m_Ctpop(m_Value(X)), m_SpecificInt(1))) ||
+  if (!match(Cmp0, m_ICmp(Pred0, m_Ctpop(m_Value(X)), m_SpecificIntAllowPoison(1))) ||
       !match(Cmp1, m_ICmp(Pred1, m_Specific(X), m_ZeroInt())))
     return nullptr;
 
@@ -985,7 +985,7 @@ static Value *foldIsPowerOf2(ICmpInst *Cmp0, ICmpInst *Cmp1, bool JoinedByAnd,
   if (JoinedByAnd &&
       match(Cmp0, m_SpecificICmp(ICmpInst::ICMP_NE, m_Value(X), m_ZeroInt())) &&
       match(Cmp1, m_SpecificICmp(ICmpInst::ICMP_ULT, m_Ctpop(m_Specific(X)),
-                                 m_SpecificInt(2)))) {
+                                 m_SpecificIntAllowPoison(2)))) {
     auto *CtPop = cast<Instruction>(Cmp1->getOperand(0));
     // Drop range attributes and re-infer them in the next iteration.
     CtPop->dropPoisonGeneratingAnnotations();
@@ -996,7 +996,7 @@ static Value *foldIsPowerOf2(ICmpInst *Cmp0, ICmpInst *Cmp1, bool JoinedByAnd,
   if (!JoinedByAnd &&
       match(Cmp0, m_SpecificICmp(ICmpInst::ICMP_EQ, m_Value(X), m_ZeroInt())) &&
       match(Cmp1, m_SpecificICmp(ICmpInst::ICMP_UGT, m_Ctpop(m_Specific(X)),
-                                 m_SpecificInt(1)))) {
+                                 m_SpecificIntAllowPoison(1)))) {
     auto *CtPop = cast<Instruction>(Cmp1->getOperand(0));
     // Drop range attributes and re-infer them in the next iteration.
     CtPop->dropPoisonGeneratingAnnotations();
@@ -1822,7 +1822,7 @@ Instruction *InstCombinerImpl::foldCastedBitwiseLogic(BinaryOperator &I) {
         match(Op0,
               m_OneUse(m_LShr(
                   m_Value(A),
-                  m_SpecificInt(Op0->getType()->getScalarSizeInBits() - 1)))) &&
+                  m_SpecificIntAllowPoison(Op0->getType()->getScalarSizeInBits() - 1)))) &&
         match(Op1, m_OneUse(m_ZExt(m_ICmp(m_Value(), m_Value()))));
 
     if (!IsMatched)
@@ -2989,7 +2989,7 @@ InstCombinerImpl::convertOrOfShiftsToFunnelShift(Instruction &Or) {
       // intrinsic, and has to reintroduce a shift modulo operation (InstCombine
       // might remove it after this fold). This still doesn't guarantee that the
       // final codegen will match this original pattern.
-      if (match(R, m_OneUse(m_Sub(m_SpecificInt(Width), m_Specific(L))))) {
+      if (match(R, m_OneUse(m_Sub(m_SpecificIntAllowPoison(Width), m_Specific(L))))) {
         KnownBits KnownL = computeKnownBits(L, &Or);
         return KnownL.getMaxValue().ult(Width) ? L : nullptr;
       }
@@ -3009,24 +3009,24 @@ InstCombinerImpl::convertOrOfShiftsToFunnelShift(Instruction &Or) {
       // (shl ShVal, (X & (Width - 1))) | (lshr ShVal, ((-X) & (Width - 1)))
       Value *X;
       unsigned Mask = Width - 1;
-      if (match(L, m_And(m_Value(X), m_SpecificInt(Mask))) &&
-          match(R, m_And(m_Neg(m_Specific(X)), m_SpecificInt(Mask))))
+      if (match(L, m_And(m_Value(X), m_SpecificIntAllowPoison(Mask))) &&
+          match(R, m_And(m_Neg(m_Specific(X)), m_SpecificIntAllowPoison(Mask))))
         return X;
 
       // (shl ShVal, X) | (lshr ShVal, ((-X) & (Width - 1)))
-      if (match(R, m_And(m_Neg(m_Specific(L)), m_SpecificInt(Mask))))
+      if (match(R, m_And(m_Neg(m_Specific(L)), m_SpecificIntAllowPoison(Mask))))
         return L;
 
       // Similar to above, but the shift amount may be extended after masking,
       // so return the extended value as the parameter for the intrinsic.
-      if (match(L, m_ZExt(m_And(m_Value(X), m_SpecificInt(Mask)))) &&
+      if (match(L, m_ZExt(m_And(m_Value(X), m_SpecificIntAllowPoison(Mask)))) &&
           match(R,
-                m_And(m_Neg(m_ZExt(m_And(m_Specific(X), m_SpecificInt(Mask)))),
-                      m_SpecificInt(Mask))))
+                m_And(m_Neg(m_ZExt(m_And(m_Specific(X), m_SpecificIntAllowPoison(Mask)))),
+                      m_SpecificIntAllowPoison(Mask))))
         return L;
 
-      if (match(L, m_ZExt(m_And(m_Value(X), m_SpecificInt(Mask)))) &&
-          match(R, m_ZExt(m_And(m_Neg(m_Specific(X)), m_SpecificInt(Mask)))))
+      if (match(L, m_ZExt(m_And(m_Value(X), m_SpecificIntAllowPoison(Mask)))) &&
+          match(R, m_ZExt(m_And(m_Neg(m_Specific(X)), m_SpecificIntAllowPoison(Mask)))))
         return L;
 
       return nullptr;
@@ -3127,6 +3127,7 @@ static Instruction *matchFunnelShift(Instruction &Or, InstCombinerImpl &IC) {
   return nullptr;
 }
 
+
 /// Attempt to combine or(zext(x),shl(zext(y),bw/2) concat packing patterns.
 static Value *matchOrConcat(Instruction &Or, InstCombiner::BuilderTy &Builder) {
   assert(Or.getOpcode() == Instruction::Or && "bswap requires an 'or'");
@@ -3184,7 +3185,7 @@ static Value *matchOrConcat(Instruction &Or, InstCombiner::BuilderTy &Builder) {
       match(UpperSrc,
             m_SExtOrSelf(m_AShr(
                 m_Specific(X),
-                m_SpecificInt(X->getType()->getScalarSizeInBits() - 1)))))
+                m_SpecificIntAllowPoison(X->getType()->getScalarSizeInBits() - 1)))))
     return Builder.CreateSExt(X, Ty);
 
   return nullptr;
@@ -4471,7 +4472,7 @@ Instruction *InstCombinerImpl::visitOr(BinaryOperator &I) {
     Value *X, *Y;
     if (match(&I, m_c_Or(m_OneUse(m_AShr(
                              m_NSWSub(m_Value(Y), m_Value(X)),
-                             m_SpecificInt(Ty->getScalarSizeInBits() - 1))),
+                             m_SpecificIntAllowPoison(Ty->getScalarSizeInBits() - 1))),
                          m_Deferred(X)))) {
       Value *NewICmpInst = Builder.CreateICmpSGT(X, Y);
       Value *AllOnes = ConstantInt::getAllOnesValue(Ty);
@@ -5181,7 +5182,7 @@ Instruction *InstCombinerImpl::foldNot(BinaryOperator &I) {
     // Bit-hack form of a signbit test for iN type:
     // ~(X >>s (N - 1)) --> sext i1 (X > -1) to iN
     unsigned FullShift = Ty->getScalarSizeInBits() - 1;
-    if (match(NotVal, m_OneUse(m_AShr(m_Value(X), m_SpecificInt(FullShift))))) {
+    if (match(NotVal, m_OneUse(m_AShr(m_Value(X), m_SpecificIntAllowPoison(FullShift))))) {
       Value *IsNotNeg = Builder.CreateIsNotNeg(X, "isnotneg");
       return new SExtInst(IsNotNeg, Ty);
     }
