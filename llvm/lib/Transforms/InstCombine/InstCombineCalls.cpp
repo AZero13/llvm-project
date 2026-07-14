@@ -318,9 +318,6 @@ Value *InstCombinerImpl::simplifyMaskedLoad(IntrinsicInst &II) {
   return nullptr;
 }
 
-// TODO, Obvious Missing Transforms:
-// * Single constant active lane -> store
-// * Narrow width by halfs excluding zero/undef lanes
 Instruction *InstCombinerImpl::simplifyMaskedStore(IntrinsicInst &II) {
   Value *StorePtr = II.getArgOperand(1);
   Align Alignment = II.getParamAlign(1).valueOrOne();
@@ -343,6 +340,75 @@ Instruction *InstCombinerImpl::simplifyMaskedStore(IntrinsicInst &II) {
 
   if (isa<ScalableVectorType>(ConstMask->getType()))
     return nullptr;
+
+  // Check if mask has a single true lane or is contiguous true from the start.
+  auto *FixedMask = cast<FixedVectorType>(ConstMask->getType());
+  unsigned NumElts = FixedMask->getNumElements();
+  unsigned NumTrueElts = 0;
+  int SingleTrueIdx = -1;
+  bool IsSingleTrue = true;
+
+  for (unsigned i = 0; i < NumElts; ++i) {
+    Constant *Elt = ConstMask->getAggregateElement(i);
+    if (!Elt || (!Elt->isOneValue() && !Elt->isNullValue() && !isa<UndefValue>(Elt))) {
+      IsSingleTrue = false;
+      break;
+    }
+    if (Elt->isOneValue()) {
+      if (SingleTrueIdx != -1)
+        IsSingleTrue = false;
+      else
+        SingleTrueIdx = i;
+    }
+  }
+
+  if (IsSingleTrue && SingleTrueIdx != -1) {
+    // Extract the single active lane.
+    Value *ScalarVal = Builder.CreateExtractElement(II.getArgOperand(0), SingleTrueIdx);
+    
+    // GEP the pointer.
+    Value *Ptr = II.getArgOperand(1);
+    Type *EltTy = II.getArgOperand(0)->getType()->getScalarType();
+    Value *GEP = Builder.CreateInBoundsGEP(EltTy, Ptr, Builder.getInt32(SingleTrueIdx));
+    
+    // Calculate alignment.
+    const DataLayout &DL = II.getModule()->getDataLayout();
+    uint64_t Offset = SingleTrueIdx * DL.getTypeAllocSize(EltTy);
+    Align ScalarAlign = commonAlignment(Alignment, Offset);
+    
+    StoreInst *S = new StoreInst(ScalarVal, GEP, false, ScalarAlign);
+    S->copyMetadata(II);
+    return S;
+  }
+
+  // Contiguous true from start check
+  for (unsigned i = 0; i < NumElts; ++i) {
+    Constant *Elt = ConstMask->getAggregateElement(i);
+    if (!Elt || !Elt->isOneValue())
+      break;
+    NumTrueElts++;
+  }
+
+  bool IsContiguous = false;
+  if (NumTrueElts > 1 && NumTrueElts < NumElts) {
+    IsContiguous = true;
+    for (unsigned i = NumTrueElts; i < NumElts; ++i) {
+      Constant *Elt = ConstMask->getAggregateElement(i);
+      if (!Elt || (!Elt->isNullValue() && !isa<UndefValue>(Elt))) {
+        IsContiguous = false;
+        break;
+      }
+    }
+  }
+
+  if (IsContiguous) {
+    SmallVector<int, 16> ShuffleMask(NumTrueElts);
+    for (unsigned i = 0; i < NumTrueElts; ++i) ShuffleMask[i] = i;
+    Value *NarrowVal = Builder.CreateShuffleVector(II.getArgOperand(0), ShuffleMask);
+    StoreInst *S = new StoreInst(NarrowVal, StorePtr, false, Alignment);
+    S->copyMetadata(II);
+    return S;
+  }
 
   // Use masked off lanes to simplify operands via SimplifyDemandedVectorElts
   APInt DemandedElts = possiblyDemandedEltsInMask(ConstMask);

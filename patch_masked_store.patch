@@ -1,0 +1,40 @@
+--- llvm/lib/Transforms/InstCombine/InstCombineCalls.cpp
++++ llvm/lib/Transforms/InstCombine/InstCombineCalls.cpp
+@@ -345,6 +345,35 @@
+   if (isa<ScalableVectorType>(ConstMask->getType()))
+     return nullptr;
+ 
++  // Check if mask is contiguous true from the start.
++  auto *FixedMask = cast<FixedVectorType>(ConstMask->getType());
++  unsigned NumElts = FixedMask->getNumElements();
++  unsigned NumTrueElts = 0;
++  for (unsigned i = 0; i < NumElts; ++i) {
++    Constant *Elt = ConstMask->getAggregateElement(i);
++    if (!Elt || !Elt->isOneValue())
++      break;
++    NumTrueElts++;
++  }
++
++  bool IsContiguous = false;
++  if (NumTrueElts > 0 && NumTrueElts < NumElts) {
++    IsContiguous = true;
++    for (unsigned i = NumTrueElts; i < NumElts; ++i) {
++      Constant *Elt = ConstMask->getAggregateElement(i);
++      if (!Elt || (!Elt->isNullValue() && !isa<UndefValue>(Elt))) {
++        IsContiguous = false;
++        break;
++      }
++    }
++  }
++
++  if (IsContiguous) {
++    SmallVector<int, 16> ShuffleMask(NumTrueElts);
++    for (unsigned i = 0; i < NumTrueElts; ++i) ShuffleMask[i] = i;
++    Value *NarrowVal = Builder.CreateShuffleVector(II.getArgOperand(0), ShuffleMask);
++    StoreInst *S = new StoreInst(NarrowVal, StorePtr, false, Alignment);
++    S->copyMetadata(II);
++    return S;
++  }
++
+   // Use masked off lanes to simplify operands via SimplifyDemandedVectorElts
+   APInt DemandedElts = possiblyDemandedEltsInMask(ConstMask);
