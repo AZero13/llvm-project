@@ -146,28 +146,19 @@ define i64 @func8(i64 %x, i64 %y) nounwind {
 define <2 x i32> @vec(<2 x i32> %x, <2 x i32> %y) nounwind {
 ; CHECK-LABEL: vec:
 ; CHECK:       // %bb.0:
-; CHECK-NEXT:    // kill: def $d1 killed $d1 def $q1
-; CHECK-NEXT:    // kill: def $d0 killed $d0 def $q0
-; CHECK-NEXT:    mov w9, v1.s[1]
-; CHECK-NEXT:    mov w10, v0.s[1]
-; CHECK-NEXT:    mov w8, #-2147483648 // =0x80000000
-; CHECK-NEXT:    fmov w12, s0
-; CHECK-NEXT:    smull x11, w10, w9
-; CHECK-NEXT:    eor w9, w10, w9
-; CHECK-NEXT:    fmov w10, s1
-; CHECK-NEXT:    cmp w9, #0
-; CHECK-NEXT:    smull x9, w12, w10
-; CHECK-NEXT:    eor w10, w12, w10
-; CHECK-NEXT:    cinv w12, w8, pl
-; CHECK-NEXT:    cmp x11, w11, sxtw
-; CHECK-NEXT:    csel w11, w12, w11, ne
-; CHECK-NEXT:    cmp w10, #0
-; CHECK-NEXT:    cinv w8, w8, pl
-; CHECK-NEXT:    cmp x9, w9, sxtw
-; CHECK-NEXT:    csel w8, w8, w9, ne
-; CHECK-NEXT:    fmov s0, w8
-; CHECK-NEXT:    mov v0.s[1], w11
-; CHECK-NEXT:    // kill: def $d0 killed $d0 killed $q0
+; CHECK-NEXT:    smull v0.2d, v0.2s, v1.2s
+; CHECK-NEXT:    movi v2.2s, #128, lsl #24
+; CHECK-NEXT:    shrn v1.2s, v0.2d, #32
+; CHECK-NEXT:    xtn v0.2s, v0.2d
+; CHECK-NEXT:    cmlt v3.2s, v1.2s, #0
+; CHECK-NEXT:    add v4.2s, v1.2s, v1.2s
+; CHECK-NEXT:    cmlt v6.2s, v0.2s, #0
+; CHECK-NEXT:    mvn v5.8b, v3.8b
+; CHECK-NEXT:    shl v4.2s, v4.2s, #31
+; CHECK-NEXT:    cmeq v1.2s, v1.2s, v6.2s
+; CHECK-NEXT:    bsl v2.8b, v3.8b, v5.8b
+; CHECK-NEXT:    orr v0.8b, v4.8b, v0.8b
+; CHECK-NEXT:    bif v0.8b, v2.8b, v1.8b
 ; CHECK-NEXT:    ret
   %tmp = call <2 x i32> @llvm.smul.fix.sat.v2i32(<2 x i32> %x, <2 x i32> %y, i32 0)
   ret <2 x i32> %tmp
@@ -176,43 +167,20 @@ define <2 x i32> @vec(<2 x i32> %x, <2 x i32> %y) nounwind {
 define <4 x i32> @vec2(<4 x i32> %x, <4 x i32> %y) nounwind {
 ; CHECK-LABEL: vec2:
 ; CHECK:       // %bb.0:
-; CHECK-NEXT:    mov w9, v1.s[1]
-; CHECK-NEXT:    mov w10, v0.s[1]
-; CHECK-NEXT:    mov w8, #-2147483648 // =0x80000000
-; CHECK-NEXT:    fmov w12, s1
-; CHECK-NEXT:    fmov w13, s0
-; CHECK-NEXT:    mov w14, v0.s[2]
-; CHECK-NEXT:    eor w11, w10, w9
-; CHECK-NEXT:    smull x9, w10, w9
-; CHECK-NEXT:    mov w10, v1.s[2]
-; CHECK-NEXT:    cmp w11, #0
-; CHECK-NEXT:    smull x11, w13, w12
-; CHECK-NEXT:    eor w12, w13, w12
-; CHECK-NEXT:    cinv w13, w8, pl
-; CHECK-NEXT:    cmp x9, w9, sxtw
-; CHECK-NEXT:    csel w9, w13, w9, ne
-; CHECK-NEXT:    cmp w12, #0
-; CHECK-NEXT:    mov w13, v1.s[3]
-; CHECK-NEXT:    cinv w12, w8, pl
-; CHECK-NEXT:    cmp x11, w11, sxtw
-; CHECK-NEXT:    csel w11, w12, w11, ne
-; CHECK-NEXT:    mov w12, v0.s[3]
-; CHECK-NEXT:    fmov s0, w11
-; CHECK-NEXT:    smull x11, w14, w10
-; CHECK-NEXT:    mov v0.s[1], w9
-; CHECK-NEXT:    eor w9, w14, w10
-; CHECK-NEXT:    smull x10, w12, w13
-; CHECK-NEXT:    cmp w9, #0
-; CHECK-NEXT:    cinv w9, w8, pl
-; CHECK-NEXT:    cmp x11, w11, sxtw
-; CHECK-NEXT:    csel w9, w9, w11, ne
-; CHECK-NEXT:    mov v0.s[2], w9
-; CHECK-NEXT:    eor w9, w12, w13
-; CHECK-NEXT:    cmp w9, #0
-; CHECK-NEXT:    cinv w8, w8, pl
-; CHECK-NEXT:    cmp x10, w10, sxtw
-; CHECK-NEXT:    csel w8, w8, w10, ne
-; CHECK-NEXT:    mov v0.s[3], w8
+; CHECK-NEXT:    smull2 v3.2d, v0.4s, v1.4s
+; CHECK-NEXT:    smull v4.2d, v0.2s, v1.2s
+; CHECK-NEXT:    mul v0.4s, v0.4s, v1.4s
+; CHECK-NEXT:    movi v2.4s, #128, lsl #24
+; CHECK-NEXT:    uzp2 v3.4s, v4.4s, v3.4s
+; CHECK-NEXT:    cmlt v6.4s, v0.4s, #0
+; CHECK-NEXT:    cmlt v4.4s, v3.4s, #0
+; CHECK-NEXT:    add v1.4s, v3.4s, v3.4s
+; CHECK-NEXT:    cmeq v3.4s, v3.4s, v6.4s
+; CHECK-NEXT:    mvn v5.16b, v4.16b
+; CHECK-NEXT:    shl v1.4s, v1.4s, #31
+; CHECK-NEXT:    bsl v2.16b, v4.16b, v5.16b
+; CHECK-NEXT:    orr v0.16b, v1.16b, v0.16b
+; CHECK-NEXT:    bif v0.16b, v2.16b, v3.16b
 ; CHECK-NEXT:    ret
   %tmp = call <4 x i32> @llvm.smul.fix.sat.v4i32(<4 x i32> %x, <4 x i32> %y, i32 0)
   ret <4 x i32> %tmp
@@ -269,3 +237,47 @@ define <4 x i64> @vec3(<4 x i64> %x, <4 x i64> %y) nounwind {
   %tmp = call <4 x i64> @llvm.smul.fix.sat.v4i64(<4 x i64> %x, <4 x i64> %y, i32 32)
   ret <4 x i64> %tmp
 }
+
+define <8 x i16> @vec_smul_fix_sat_v8i16(<8 x i16> %a, <8 x i16> %b) {
+; CHECK-LABEL: vec_smul_fix_sat_v8i16:
+; CHECK:       // %bb.0:
+; CHECK-NEXT:    sqdmulh v0.8h, v0.8h, v1.8h
+; CHECK-NEXT:    ret
+  %r = call <8 x i16> @llvm.smul.fix.sat.v8i16(<8 x i16> %a, <8 x i16> %b, i32 15)
+  ret <8 x i16> %r
+}
+
+define <4 x i32> @vec_smul_fix_sat_v4i32(<4 x i32> %a, <4 x i32> %b) {
+; CHECK-LABEL: vec_smul_fix_sat_v4i32:
+; CHECK:       // %bb.0:
+; CHECK-NEXT:    sqdmulh v0.4s, v0.4s, v1.4s
+; CHECK-NEXT:    ret
+  %r = call <4 x i32> @llvm.smul.fix.sat.v4i32(<4 x i32> %a, <4 x i32> %b, i32 31)
+  ret <4 x i32> %r
+}
+
+define <8 x i16> @vec_smul_fix_sat_v8i16_scale2(<8 x i16> %a, <8 x i16> %b) {
+; CHECK-LABEL: vec_smul_fix_sat_v8i16_scale2:
+; CHECK:       // %bb.0:
+; CHECK-NEXT:    smull2 v3.4s, v0.8h, v1.8h
+; CHECK-NEXT:    smull v4.4s, v0.4h, v1.4h
+; CHECK-NEXT:    movi v2.8h, #1
+; CHECK-NEXT:    mul v0.8h, v0.8h, v1.8h
+; CHECK-NEXT:    uzp2 v3.8h, v4.8h, v3.8h
+; CHECK-NEXT:    movi v4.8h, #128, lsl #8
+; CHECK-NEXT:    shl v1.8h, v3.8h, #14
+; CHECK-NEXT:    cmgt v2.8h, v3.8h, v2.8h
+; CHECK-NEXT:    usra v1.8h, v0.8h, #2
+; CHECK-NEXT:    bic v0.16b, v1.16b, v2.16b
+; CHECK-NEXT:    bic v2.8h, #128, lsl #8
+; CHECK-NEXT:    mvni v1.8h, #1
+; CHECK-NEXT:    orr v0.16b, v2.16b, v0.16b
+; CHECK-NEXT:    cmgt v1.8h, v1.8h, v3.8h
+; CHECK-NEXT:    bit v0.16b, v4.16b, v1.16b
+; CHECK-NEXT:    ret
+  %r = call <8 x i16> @llvm.smul.fix.sat.v8i16(<8 x i16> %a, <8 x i16> %b, i32 2)
+  ret <8 x i16> %r
+}
+
+declare <8 x i16> @llvm.smul.fix.sat.v8i16(<8 x i16>, <8 x i16>, i32)
+declare <4 x i32> @llvm.smul.fix.sat.v4i32(<4 x i32>, <4 x i32>, i32)

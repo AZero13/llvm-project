@@ -1415,6 +1415,7 @@ AArch64TargetLowering::AArch64TargetLowering(const TargetMachine &TM,
 
     for (MVT VT : {MVT::v8i8, MVT::v4i16, MVT::v2i32, MVT::v16i8, MVT::v8i16,
                    MVT::v4i32}) {
+      setOperationAction(ISD::SMULFIXSAT, VT, Custom);
       setOperationAction(ISD::AVGFLOORS, VT, Legal);
       setOperationAction(ISD::AVGFLOORU, VT, Legal);
       setOperationAction(ISD::AVGCEILS, VT, Legal);
@@ -6180,6 +6181,25 @@ SDValue AArch64TargetLowering::LowerMUL(SDValue Op, SelectionDAG &DAG) const {
       DAG.getConstant(0, DL, MVT::i64));
 }
 
+SDValue AArch64TargetLowering::LowerSMULFIXSAT(SDValue Op, SelectionDAG &DAG) const {
+  EVT VT = Op.getValueType();
+  if (!VT.isVector())
+    return SDValue();
+
+  SDLoc DL(Op);
+  SDValue Op0 = Op.getOperand(0);
+  SDValue Op1 = Op.getOperand(1);
+  unsigned Scale = Op.getConstantOperandVal(2);
+  unsigned EltSize = VT.getScalarSizeInBits();
+
+  if (Scale == EltSize - 1) {
+    if (EltSize == 16 || EltSize == 32)
+      return DAG.getNode(AArch64ISD::SQDMULH, DL, VT, Op0, Op1);
+  }
+
+  return SDValue();
+}
+
 static inline SDValue getPTrue(SelectionDAG &DAG, SDLoc DL, EVT VT,
                                int Pattern) {
   if (Pattern == AArch64SVEPredPattern::all)
@@ -8473,6 +8493,8 @@ SDValue AArch64TargetLowering::LowerOperation(SDValue Op,
   case ISD::SMULO:
   case ISD::UMULO:
     return LowerXALUO(Op, DAG);
+  case ISD::SMULFIXSAT:
+    return LowerSMULFIXSAT(Op, DAG);
   case ISD::FADD:
     return LowerToPredicatedOp(Op, DAG, AArch64ISD::FADD_PRED);
   case ISD::FSUB:
