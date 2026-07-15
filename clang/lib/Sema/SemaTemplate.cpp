@@ -1502,8 +1502,11 @@ QualType Sema::CheckNonTypeTemplateParameterType(QualType T,
   //   A non-type template-parameter of type "array of T" or
   //   "function returning T" is adjusted to be of type "pointer to
   //   T" or "pointer to function returning T", respectively.
-  if (T->isArrayType() || T->isFunctionType())
+  if (T->isArrayType() || T->isFunctionType()) {
+    if (CheckQualifiedFunctionForPointer(T, Loc, QFK_Pointer))
+      return QualType();
     return Context.getDecayedType(T);
+  }
 
   // If T is a dependent type, we can't do the check now, so we
   // assume that it is well-formed. Note that stripping off the

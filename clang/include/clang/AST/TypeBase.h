@@ -8462,7 +8462,7 @@ inline bool QualType::isReferenceable() const {
   if (const auto *F = Self.getAs<FunctionProtoType>())
     return F->getMethodQuals().empty() && F->getRefQualifier() == RQ_None;
 
-  return false;
+  return Self.isFunctionType();
 }
 
 inline SplitQualType QualType::split() const {

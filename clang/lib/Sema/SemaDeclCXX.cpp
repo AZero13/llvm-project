@@ -11628,7 +11628,9 @@ void Sema::CheckConversionDeclarator(Declarator &D, QualType &R,
     D.setInvalidType();
   } else if (ConvType->isFunctionType()) {
     Diag(D.getIdentifierLoc(), diag::err_conv_function_to_function);
-    ConvType = Context.getPointerType(ConvType);
+    if (!CheckQualifiedFunctionForPointer(ConvType, D.getIdentifierLoc(),
+                                          QFK_Pointer))
+      ConvType = Context.getPointerType(ConvType);
     D.setInvalidType();
   }
 

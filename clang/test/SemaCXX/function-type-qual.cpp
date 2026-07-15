@@ -7,6 +7,9 @@ extern void (&rf)() const; // expected-error {{reference to function type cannot
 typedef void cfn() const;
 cfn f2; // expected-error {{non-member function of type 'cfn' (aka 'void () const') cannot have 'const' qualifier}}
 
+void decay1(void p() const); // expected-error {{non-member function cannot have 'const' qualifier}}
+void decay2(cfn p); // expected-error {{non-member function of type 'cfn' (aka 'void () const') cannot have 'const' qualifier}}
+
 class C {
   void f() const;
   cfn f2;

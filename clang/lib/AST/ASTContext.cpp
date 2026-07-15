@@ -4054,7 +4054,7 @@ QualType ASTContext::getDecayedType(QualType T) const {
   //   A declaration of a parameter as "function returning type"
   //   shall be adjusted to "pointer to function returning type", as
   //   in 6.3.2.1.
-  if (T->isFunctionType())
+  if (T->isFunctionType() && T.isReferenceable())
     Decayed = getPointerType(T);
 
   return getDecayedType(T, Decayed);
@@ -8135,7 +8135,7 @@ QualType ASTContext::getAdjustedParameterType(QualType T) const {
     return getLValueReferenceType(T);
   if (getLangOpts().HLSL && T->isConstantArrayType())
     return getArrayParameterType(T);
-  if (T->isArrayType() || T->isFunctionType())
+  if (T->isArrayType() || (T->isFunctionType() && T.isReferenceable()))
     return getDecayedType(T);
   return T;
 }

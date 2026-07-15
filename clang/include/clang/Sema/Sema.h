@@ -15317,6 +15317,14 @@ public:
   QualType BuildAddressSpaceAttr(QualType &T, Expr *AddrSpace,
                                  SourceLocation AttrLoc);
 
+  /// The values of this enum are used in diagnostics.
+  enum QualifiedFunctionKind { QFK_BlockPointer, QFK_Pointer, QFK_Reference };
+
+  /// Check whether the type T is a qualified function type, and if it is,
+  /// diagnose that it cannot be contained within the given kind of declarator.
+  bool CheckQualifiedFunctionForPointer(QualType T, SourceLocation Loc,
+                                        QualifiedFunctionKind QFK);
+
   bool CheckQualifiedFunctionForTypeId(QualType T, SourceLocation Loc);
 
   bool CheckFunctionReturnType(QualType T, SourceLocation Loc);
