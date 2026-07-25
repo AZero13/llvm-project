@@ -2780,6 +2780,7 @@ X86TargetLowering::X86TargetLowering(const X86TargetMachine &TM,
 
   // We have target-specific dag combine patterns for the following nodes:
   setTargetDAGCombine({ISD::VECTOR_SHUFFLE,
+                       ISD::BUILD_VECTOR,
                        ISD::SCALAR_TO_VECTOR,
                        ISD::INSERT_VECTOR_ELT,
                        ISD::EXTRACT_VECTOR_ELT,
@@ -61984,6 +61985,56 @@ static SDValue combineEXTRACT_SUBVECTOR(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
+static SDValue combineBUILD_VECTOR(SDNode *N, SelectionDAG &DAG,
+                                   const X86Subtarget &Subtarget) {
+  EVT VT = N->getValueType(0);
+
+  // If this is a build_vector(uint_to_fp, 0, 0, 0) for i64->f32 on pre-AVX512,
+  // we can optimize it by expanding uint_to_fp into branches that produce
+  // vector types, preventing vmovss after the branches.
+  if (Subtarget.is64Bit() && !Subtarget.hasAVX512() && VT == MVT::v4f32) {
+    auto isAllZeroExceptFirst = [](SDNode *N) {
+      for (unsigned i = 1, e = N->getNumOperands(); i != e; ++i) {
+        auto *C = dyn_cast<ConstantFPSDNode>(N->getOperand(i));
+        if (!C || !C->isZero())
+          return false;
+      }
+      return true;
+    };
+
+    SDValue N0 = N->getOperand(0);
+    if (N0.getOpcode() == ISD::UINT_TO_FP &&
+        N0.getOperand(0).getValueType() == MVT::i64 &&
+        isAllZeroExceptFirst(N)) {
+      SDLoc DL(N);
+      SDValue X = N0.getOperand(0);
+
+      SDValue SignBitTest = DAG.getSetCC(
+          DL, DAG.getTargetLoweringInfo().getSetCCResultType(DAG.getDataLayout(), *DAG.getContext(), MVT::i64),
+          X, DAG.getConstant(0, DL, MVT::i64), ISD::SETLT);
+
+      // Fast path
+      SDValue FastScalar = DAG.getNode(ISD::SINT_TO_FP, DL, MVT::f32, X);
+      SDValue FastVec = DAG.getNode(ISD::SCALAR_TO_VECTOR, DL, MVT::v4f32, FastScalar);
+      FastVec = DAG.getNode(X86ISD::VZEXT_MOVL, DL, MVT::v4f32, FastVec);
+
+      // Slow path
+      SDValue SRL = DAG.getNode(ISD::SRL, DL, MVT::i64, X, DAG.getConstant(1, DL, MVT::i8));
+      SDValue LSB = DAG.getNode(ISD::AND, DL, MVT::i64, X, DAG.getConstant(1, DL, MVT::i64));
+      SDValue ShiftedX = DAG.getNode(ISD::OR, DL, MVT::i64, SRL, LSB);
+
+      SDValue SlowScalar = DAG.getNode(ISD::SINT_TO_FP, DL, MVT::f32, ShiftedX);
+      SDValue SlowVec = DAG.getNode(ISD::SCALAR_TO_VECTOR, DL, MVT::v4f32, SlowScalar);
+      SlowVec = DAG.getNode(X86ISD::VZEXT_MOVL, DL, MVT::v4f32, SlowVec);
+      SlowVec = DAG.getNode(ISD::FADD, DL, MVT::v4f32, SlowVec, SlowVec);
+
+      return DAG.getNode(ISD::SELECT, DL, MVT::v4f32, SignBitTest, SlowVec, FastVec);
+    }
+  }
+
+  return SDValue();
+}
+
 static SDValue combineSCALAR_TO_VECTOR(SDNode *N, SelectionDAG &DAG,
                                        const X86Subtarget &Subtarget) {
   using namespace SDPatternMatch;
@@ -62979,6 +63030,8 @@ SDValue X86TargetLowering::PerformDAGCombine(SDNode *N,
   switch (N->getOpcode()) {
   // clang-format off
   default: break;
+  case ISD::BUILD_VECTOR:
+    return combineBUILD_VECTOR(N, DAG, Subtarget);
   case ISD::SCALAR_TO_VECTOR:
     return combineSCALAR_TO_VECTOR(N, DAG, Subtarget);
   case ISD::EXTRACT_VECTOR_ELT:
