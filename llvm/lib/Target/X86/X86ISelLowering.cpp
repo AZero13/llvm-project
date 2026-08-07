@@ -25743,6 +25743,29 @@ SDValue X86TargetLowering::LowerSELECT(SDValue Op, SelectionDAG &DAG) const {
                                            Subtarget))
       return R;
 
+  if (VT.isScalarInteger()) {
+    using namespace llvm::SDPatternMatch;
+    SDValue X;
+    bool Match1 = sd_match(Op1, m_Neg(m_Value(X))) && X == Op2;
+    bool Match2 = !Match1 && sd_match(Op2, m_Neg(m_Value(X))) && X == Op1;
+    if (Match1 || Match2) {
+      SDValue M;
+      if (Match1) {
+        M = DAG.getNode(ISD::SIGN_EXTEND_INREG, DL, VT,
+                        DAG.getZExtOrTrunc(Cond, DL, VT),
+                        DAG.getValueType(MVT::i1));
+      } else {
+        SDValue NotCond = DAG.getNode(ISD::XOR, DL, Cond.getValueType(), Cond,
+                                      DAG.getConstant(1, DL, Cond.getValueType()));
+        M = DAG.getNode(ISD::SIGN_EXTEND_INREG, DL, VT,
+                        DAG.getZExtOrTrunc(NotCond, DL, VT),
+                        DAG.getValueType(MVT::i1));
+      }
+      SDValue Xor = DAG.getNode(ISD::XOR, DL, VT, X, M);
+      return DAG.getNode(ISD::SUB, DL, VT, Xor, M);
+    }
+  }
+
   // If condition flag is set by a X86ISD::CMP, then use it as the condition
   // setting operand in place of the X86ISD::SETCC.
   unsigned CondOpcode = Cond.getOpcode();

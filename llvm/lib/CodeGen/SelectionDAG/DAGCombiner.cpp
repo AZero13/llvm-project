@@ -4912,6 +4912,27 @@ SDValue DAGCombiner::visitMUL(SDNode *N) {
   if (SDValue NewSel = foldBinOpIntoSelect(N))
     return NewSel;
 
+  // fold (mul x, (select c, 1, -1)) -> (select c, x, -x)
+  // fold (mul x, (select c, -1, 1)) -> (select c, -x, x)
+  for (int i = 0; i < 2; ++i) {
+    SDValue Op = i == 0 ? N0 : N1;
+    SDValue OtherOp = i == 0 ? N1 : N0;
+    if (Op.getOpcode() == ISD::SELECT) {
+      if (isOneOrOneSplat(Op.getOperand(1)) &&
+          isAllOnesOrAllOnesSplat(Op.getOperand(2))) {
+        SDValue Neg = DAG.getNode(ISD::SUB, DL, VT,
+                                  DAG.getConstant(0, DL, VT), OtherOp);
+        return DAG.getSelect(DL, VT, Op.getOperand(0), OtherOp, Neg);
+      }
+      if (isAllOnesOrAllOnesSplat(Op.getOperand(1)) &&
+          isOneOrOneSplat(Op.getOperand(2))) {
+        SDValue Neg = DAG.getNode(ISD::SUB, DL, VT,
+                                  DAG.getConstant(0, DL, VT), OtherOp);
+        return DAG.getSelect(DL, VT, Op.getOperand(0), Neg, OtherOp);
+      }
+    }
+  }
+
   // fold (mul x, -1) -> 0-x
   if (N1IsConst && ConstValue1.isAllOnes())
     return DAG.getNegative(N0, DL, VT);
