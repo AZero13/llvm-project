@@ -391,3 +391,25 @@ entry:
   %7 = or disjoint i16 %6, %0
   ret i16 %7
 }
+
+define i32 @bt_test_2(i32 %a, i32 %b) nounwind {
+; X86-LABEL: bt_test_2:
+; X86:       # %bb.0: # %entry
+; X86-NEXT:    movl {{[0-9]+}}(%esp), %eax
+; X86-NEXT:    btl $1, {{[0-9]+}}(%esp)
+; X86-NEXT:    adcl $0, %eax
+; X86-NEXT:    retl
+;
+; X64-LABEL: bt_test_2:
+; X64:       # %bb.0: # %entry
+; X64-NEXT:    movl %edi, %eax
+; X64-NEXT:    btl $1, %esi
+; X64-NEXT:    adcl $0, %eax
+; X64-NEXT:    retq
+entry:
+  %and = and i32 %b, 2
+  %cmp = icmp ne i32 %and, 0
+  %zext = zext i1 %cmp to i32
+  %add = add i32 %a, %zext
+  ret i32 %add
+}

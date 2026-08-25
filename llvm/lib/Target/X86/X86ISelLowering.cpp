@@ -24266,7 +24266,8 @@ X86TargetLowering::BuildSDIVPow2(SDNode *N, const APInt &Divisor,
 /// Result of 'and' is compared against zero. Change to a BT node if possible.
 /// Returns the BT node and the condition code needed to use it.
 static SDValue LowerAndToBT(SDValue And, ISD::CondCode CC, const SDLoc &dl,
-                            SelectionDAG &DAG, X86::CondCode &X86CC) {
+                            SelectionDAG &DAG, X86::CondCode &X86CC,
+                            bool ForceBT = false) {
   using namespace SDPatternMatch;
   assert(And.getOpcode() == ISD::AND && "Expected AND node!");
   assert(And.getValueType().isScalarInteger() && "Scalar type expected");
@@ -24299,7 +24300,8 @@ static SDValue LowerAndToBT(SDValue And, ISD::CondCode CC, const SDLoc &dl,
     // Use BT if the immediate can't be encoded in a TEST instruction or we
     // are optimizing for size and the immediate won't fit in a byte.
     bool OptForSize = DAG.shouldOptForSize();
-    if (!AndRHSVal.isPowerOf2() || AndRHSVal.isIntN(OptForSize ? 8 : 32))
+    if (!AndRHSVal.isPowerOf2() ||
+        (!ForceBT && AndRHSVal.isIntN(OptForSize ? 8 : 32)))
       return SDValue();
     // (Src & ConstPow2) ==/!= 0
     BitNo = DAG.getConstant(AndRHSVal.ceilLogBase2(), dl, Src.getValueType());
@@ -53452,9 +53454,32 @@ static SDValue combineAddOrSubToADCOrSBB(bool IsSub, const SDLoc &DL, EVT VT,
   if (Y.getOpcode() == X86ISD::SETCC && Y.hasOneUse()) {
     CC = (X86::CondCode)Y.getConstantOperandVal(0);
     EFLAGS = Y.getOperand(1);
+
+    // If EFLAGS is from a CMP(AND(X, Pow2), 0), we can convert it to BT to
+    // expose the carry flag for ADC/SBB folding, even if the constant is small.
+    if ((CC == X86::COND_E || CC == X86::COND_NE) &&
+        EFLAGS.getOpcode() == X86ISD::CMP && EFLAGS.hasOneUse() &&
+        isNullConstant(EFLAGS.getOperand(1)) &&
+        EFLAGS.getOperand(0).getOpcode() == ISD::AND) {
+      ISD::CondCode Cond = CC == X86::COND_E ? ISD::SETEQ : ISD::SETNE;
+      if (SDValue BT = LowerAndToBT(EFLAGS.getOperand(0), Cond, DL, DAG, CC,
+                                    /*ForceBT=*/true))
+        EFLAGS = BT;
+    }
   } else if (Y.getOpcode() == ISD::AND && isOneConstant(Y.getOperand(1)) &&
              Y.hasOneUse()) {
     EFLAGS = LowerAndToBT(Y, ISD::SETNE, DL, DAG, CC);
+  } else if (Y.getOpcode() == ISD::SRL && Y.hasOneUse() &&
+             Y.getOperand(0).getOpcode() == ISD::AND &&
+             Y.getOperand(0).hasOneUse()) {
+    // Recognize SRL(AND(X, Pow2), Log2(Pow2)) which is a bit test.
+    auto *AndC = dyn_cast<ConstantSDNode>(Y.getOperand(0).getOperand(1));
+    auto *SrlC = dyn_cast<ConstantSDNode>(Y.getOperand(1));
+    if (AndC && SrlC && AndC->getAPIntValue().isPowerOf2() &&
+        AndC->getAPIntValue().logBase2() == SrlC->getZExtValue()) {
+      EFLAGS = LowerAndToBT(Y.getOperand(0), ISD::SETNE, DL, DAG, CC,
+                            /*ForceBT=*/true);
+    }
   }
 
   if (!EFLAGS)
