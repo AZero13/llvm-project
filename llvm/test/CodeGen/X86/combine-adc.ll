@@ -334,3 +334,60 @@ define i32 @adc_fold_with_used_flag(i32 %a0) nounwind {
   %sum = extractvalue { i8, i32 } %adc, 1
   ret i32 %sum
 }
+
+define i8 @func0000000000000005(i8 %0, i64 %1) nounwind {
+; X86-LABEL: func0000000000000005:
+; X86:       # %bb.0: # %entry
+; X86-NEXT:    movzbl {{[0-9]+}}(%esp), %eax
+; X86-NEXT:    movl {{[0-9]+}}(%esp), %ecx
+; X86-NEXT:    andl $2, %ecx
+; X86-NEXT:    shrl %ecx
+; X86-NEXT:    andb $-2, %al
+; X86-NEXT:    orb %cl, %al
+; X86-NEXT:    retl
+;
+; X64-LABEL: func0000000000000005:
+; X64:       # %bb.0: # %entry
+; X64-NEXT:    # kill: def $edi killed $edi def $rdi
+; X64-NEXT:    andl $2, %esi
+; X64-NEXT:    shrl %esi
+; X64-NEXT:    andb $-2, %dil
+; X64-NEXT:    leal (%rdi,%rsi), %eax
+; X64-NEXT:    # kill: def $al killed $al killed $eax
+; X64-NEXT:    retq
+entry:
+  %2 = and i64 %1, 2
+  %3 = icmp ne i64 %2, 0
+  %4 = zext i1 %3 to i8
+  %5 = and i8 %0, -2
+  %6 = or disjoint i8 %5, %4
+  ret i8 %6
+}
+
+define i16 @func000000000000000f(i16 %0, i16 %1, i64 %2) nounwind {
+; X86-LABEL: func000000000000000f:
+; X86:       # %bb.0: # %entry
+; X86-NEXT:    movl {{[0-9]+}}(%esp), %eax
+; X86-NEXT:    shrl $17, %eax
+; X86-NEXT:    andl $1, %eax
+; X86-NEXT:    orw {{[0-9]+}}(%esp), %ax
+; X86-NEXT:    orw {{[0-9]+}}(%esp), %ax
+; X86-NEXT:    # kill: def $ax killed $ax killed $eax
+; X86-NEXT:    retl
+;
+; X64-LABEL: func000000000000000f:
+; X64:       # %bb.0: # %entry
+; X64-NEXT:    movl %esi, %eax
+; X64-NEXT:    btq $49, %rdx
+; X64-NEXT:    adcw $0, %ax
+; X64-NEXT:    orl %edi, %eax
+; X64-NEXT:    # kill: def $ax killed $ax killed $eax
+; X64-NEXT:    retq
+entry:
+  %3 = lshr i64 %2, 49
+  %4 = trunc nuw nsw i64 %3 to i16
+  %5 = and i16 %4, 1
+  %6 = or disjoint i16 %1, %5
+  %7 = or disjoint i16 %6, %0
+  ret i16 %7
+}
