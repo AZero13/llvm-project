@@ -90,6 +90,7 @@
 #include "llvm/CodeGen/CFIFixup.h"
 #include "llvm/CodeGen/CFIInstrInserter.h"
 #include "llvm/CodeGen/CodeGenPrepare.h"
+#include "llvm/CodeGen/OptimizeStdarg.h"
 #include "llvm/CodeGen/ComplexDeinterleavingPass.h"
 #include "llvm/CodeGen/DeadMachineInstructionElim.h"
 #include "llvm/CodeGen/DetectDeadLanes.h"

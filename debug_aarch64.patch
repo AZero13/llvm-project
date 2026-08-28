@@ -1,0 +1,40 @@
+--- llvm/lib/Target/AArch64/AArch64ISelLowering.cpp
++++ llvm/lib/Target/AArch64/AArch64ISelLowering.cpp
+@@ -9869,6 +9869,7 @@
+         } else if (CurrentOffset == 24 || CurrentOffset == 28) {
+           bool FoundICmp = false;
+           for (const llvm::User *LU : Load->users()) {
++            llvm::errs() << "AArch64 Load user: " << *LU << "\n";
+             if (auto *ICmp = dyn_cast<ICmpInst>(LU)) {
+               if (ICmp->getPredicate() == CmpInst::ICMP_ULT || ICmp->getPredicate() == CmpInst::ICMP_ULE) {
+                 if (auto *C = dyn_cast<ConstantInt>(ICmp->getOperand(1))) {
+@@ -9879,15 +9880,18 @@
+                   
+                   if (CurrentOffset == 24 && Limit < 0) {
+                     unsigned Bytes = -Limit + 1;
++                    llvm::errs() << "AArch64 GPR Limit: " << Limit << ", Bytes: " << Bytes << "\n";
+                     TotalGPRs += (Bytes + 7) / 8;
+                     FoundICmp = true;
+                   } else if (CurrentOffset == 28 && Limit < 0) {
+                     unsigned Bytes = -Limit + 1;
++                    llvm::errs() << "AArch64 FPR Limit: " << Limit << ", Bytes: " << Bytes << "\n";
+                     TotalFPRs += (Bytes + 15) / 16;
+                     FoundICmp = true;
+                   }
+                 }
+               }
+             }
+           }
+           if (!FoundICmp) {
++            llvm::errs() << "AArch64 NO ICMP FOUND!\n";
+             if (CurrentOffset == 24) UnknownGPRUse = true;
+             else UnknownFPRUse = true;
+           }
+@@ -9901,6 +9905,7 @@
+     }
+   }
+ 
++  llvm::errs() << "AArch64 TotalGPRs: " << TotalGPRs << " UnknownGPRUse: " << UnknownGPRUse << "\n";
+   RequiredGPRs = UnknownGPRUse ? 8 : std::min(TotalGPRs, 8u);
+   RequiredFPRs = UnknownFPRUse ? 8 : std::min(TotalFPRs, 8u);
+   return true;

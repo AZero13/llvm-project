@@ -3655,6 +3655,7 @@ public:
     return false;
   }
 
+
   // Get the preferred opcode for FP_TO_XINT nodes.
   // By default, this checks if the provded operation is an illegal FP_TO_UINT
   // and if so, checks if FP_TO_SINT is legal or custom for use as a
@@ -4110,6 +4111,15 @@ protected:
                                     MachineBasicBlock *MBB) const;
 
   bool IsStrictFPEnabled;
+
+public:
+  /// Analyze stdarg usage in the given function.
+  /// \returns true if the target could successfully analyze the function, false otherwise.
+  /// If true, RequiredGPRs and RequiredFPRs are set to the minimum number of registers required.
+  virtual bool analyzeStdargUsage(const Function &F, unsigned &RequiredGPRs,
+                                  unsigned &RequiredFPRs) const {
+    return false;
+  }
 };
 
 /// This class defines information used to lower LLVM code to legal SelectionDAG

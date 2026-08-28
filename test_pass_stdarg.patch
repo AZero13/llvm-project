@@ -1,0 +1,112 @@
+--- llvm/lib/Target/X86/X86ISelLoweringCall.cpp
++++ llvm/lib/Target/X86/X86ISelLoweringCall.cpp
+@@ -37,6 +37,7 @@
+ #include "llvm/IR/IntrinsicsX86.h"
+ #include "llvm/IR/PatternMatch.h"
+ #include "llvm/IR/Statepoint.h"
++#include "llvm/ADT/SCCIterator.h"
+ #include "llvm/MC/MCAsmInfo.h"
+ #include "llvm/Support/CommandLine.h"
+ #include "llvm/Support/Debug.h"
+@@ -1753,24 +1754,34 @@
+   const Value *VAList = VAStart->getArgOperand(0);
+   const Value *Base = getUnderlyingObject(VAList);
+ 
+-  bool ReadsGPR = false;
+-  bool ReadsFPR = false;
++  unsigned TotalGPRs = 0;
++  unsigned TotalFPRs = 0;
++  bool UnknownGPRUse = false;
++  bool UnknownFPRUse = false;
++
++  bool HasLoop = false;
++  for (auto I = scc_begin(&F), E = scc_end(&F); I != E; ++I) {
++    if (I->size() > 1) { HasLoop = true; break; }
++    const BasicBlock *BB = I->front();
++    if (llvm::is_contained(successors(BB), BB)) { HasLoop = true; break; }
++  }
++  if (HasLoop) {
++    UnknownGPRUse = true;
++    UnknownFPRUse = true;
++  }
+ 
+   SmallVector<const Value *, 8> Worklist;
+   SmallPtrSet<const Value *, 8> Visited;
+   Worklist.push_back(Base);
+   Visited.insert(Base);
+ 
+-  while (!Worklist.empty()) {
++  while (!Worklist.empty() && (!UnknownGPRUse || !UnknownFPRUse)) {
+     const Value *V = Worklist.pop_back_val();
+     for (const Use &U : V->uses()) {
+       const User *User = U.getUser();
+       if (auto *GEP = dyn_cast<GetElementPtrInst>(User)) {
+         APInt Offset(F.getParent()->getDataLayout().getIndexTypeSizeInBits(GEP->getType()), 0);
+-        if (GEP->accumulateConstantOffset(F.getParent()->getDataLayout(), Offset)) {
+-          if (Offset == 0) ReadsGPR = true;
+-          else if (Offset == 4) ReadsFPR = true;
+-        } else {
++        if (!GEP->accumulateConstantOffset(F.getParent()->getDataLayout(), Offset)) {
+           // Variable offset, be conservative
+-          ReadsGPR = true;
+-          ReadsFPR = true;
++          UnknownGPRUse = true;
++          UnknownFPRUse = true;
+         }
+         if (Visited.insert(GEP).second)
+           Worklist.push_back(GEP);
+       } else if (isa<LoadInst>(User) || isa<StoreInst>(User)) {
+-        // Direct load/store from this pointer (offset 0)
+-        if (V == Base) ReadsGPR = true;
++        if (auto *Load = dyn_cast<LoadInst>(User)) {
++          // Find the icmp ult instruction that checks the offset
++          bool FoundICmp = false;
++          for (const User *LU : Load->users()) {
++            if (auto *ICmp = dyn_cast<ICmpInst>(LU)) {
++              if (ICmp->getPredicate() == CmpInst::ICMP_ULT) {
++                if (auto *C = dyn_cast<ConstantInt>(ICmp->getOperand(1))) {
++                  uint64_t Limit = C->getZExtValue();
++                  // X86-64 ABI: ult gp_offset, 49 - num_gp * 8
++                  if (Limit <= 48) {
++                    unsigned NumGP = (49 - Limit) / 8;
++                    TotalGPRs += NumGP;
++                    FoundICmp = true;
++                  }
++                  // X86-64 ABI: ult fp_offset, 305 - num_fp * 16
++                  else if (Limit >= 48 && Limit <= 304) {
++                    unsigned NumFP = (305 - Limit) / 16;
++                    TotalFPRs += NumFP;
++                    FoundICmp = true;
++                  }
++                }
++              }
++            }
++          }
++          if (!FoundICmp) {
++            UnknownGPRUse = true;
++            UnknownFPRUse = true;
++          }
++        }
+       } else if (isa<BitCastInst>(User) || isa<AddrSpaceCastInst>(User)) {
+         if (Visited.insert(User).second)
+           Worklist.push_back(User);
+       } else if (isa<IntrinsicInst>(User)) {
+         // Assume va_start, va_end, lifetime markers don't read the counters
+       } else {
+         // Unknown use, be conservative
+-        ReadsGPR = true;
+-        ReadsFPR = true;
++        UnknownGPRUse = true;
++        UnknownFPRUse = true;
+       }
+     }
+   }
+ 
+   // Set the required sizes
+-  RequiredGPRs = ReadsGPR ? 6 : 0;
+-  RequiredFPRs = ReadsFPR ? 8 : 0;
++  RequiredGPRs = UnknownGPRUse ? 6 : std::min(TotalGPRs, 6u);
++  RequiredFPRs = UnknownFPRUse ? 8 : std::min(TotalFPRs, 8u);
+ 
+   return true;
+ }

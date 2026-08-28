@@ -1,0 +1,42 @@
+--- llvm/lib/Target/X86/X86ISelLoweringCall.cpp
++++ llvm/lib/Target/X86/X86ISelLoweringCall.cpp
+@@ -1734,6 +1734,8 @@
+   if (!Subtarget.is64Bit() || Subtarget.isTargetWin64())
+     return false;
+ 
++  errs() << "DEBUG: analyzeStdargUsage called for " << F.getName() << "\n";
++
+   const IntrinsicInst *VAStart = nullptr;
+   for (const BasicBlock &BB : F) {
+     for (const Instruction &I : BB) {
+@@ -1748,15 +1750,20 @@
+     }
+   }
+ 
+-  if (!VAStart)
++  if (!VAStart) {
++    errs() << "DEBUG: no VAStart found\n";
+     return false;
++  }
+ 
+   const Value *VAList = VAStart->getArgOperand(0);
+   const Value *Base = getUnderlyingObject(VAList);
+ 
+-  if (PointerMayBeCaptured(Base, false, true))
++  if (PointerMayBeCaptured(Base, false, true)) {
++    errs() << "DEBUG: PointerMayBeCaptured returned true\n";
+     return false; // va_list escapes, give up
++  }
+ 
++  errs() << "DEBUG: Pointer not captured\n";
+   bool ReadsGPR = false;
+   bool ReadsFPR = false;
+ 
+@@ -1790,6 +1797,7 @@
+         // Assume va_start, va_end, lifetime markers don't read the counters
+       } else {
+         // Unknown use, be conservative
++        errs() << "DEBUG: Unknown use: " << *User << "\n";
+         ReadsGPR = true;
+         ReadsFPR = true;
+       }

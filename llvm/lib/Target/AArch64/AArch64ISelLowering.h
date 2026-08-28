@@ -975,6 +975,9 @@ private:
   bool hasMultipleConditionRegisters(EVT VT) const override {
     return VT.isScalableVector();
   }
+
+  bool analyzeStdargUsage(const Function &F, unsigned &RequiredGPRs,
+                          unsigned &RequiredFPRs) const override;
 };
 
 namespace AArch64 {

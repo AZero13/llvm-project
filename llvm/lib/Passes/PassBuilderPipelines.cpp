@@ -132,6 +132,7 @@
 #include "llvm/Transforms/Scalar/Reassociate.h"
 #include "llvm/Transforms/Scalar/SCCP.h"
 #include "llvm/Transforms/Scalar/SROA.h"
+#include "llvm/CodeGen/OptimizeStdarg.h"
 #include "llvm/Transforms/Scalar/SimpleLoopUnswitch.h"
 #include "llvm/Transforms/Scalar/SimplifyCFG.h"
 #include "llvm/Transforms/Scalar/SpeculativeExecution.h"
@@ -492,6 +493,10 @@ PassBuilder::buildO1FunctionSimplificationPipeline(OptimizationLevel Level,
   if (AreStatisticsEnabled())
     FPM.addPass(CountVisitsPass());
 
+  // Optimize stdarg to eliminate unused varargs prior to SROA
+  if (TM)
+    FPM.addPass(OptimizeStdargPass(*TM));
+
   // Form SSA out of local memory accesses after breaking apart aggregates into
   // scalars.
   FPM.addPass(SROAPass(SROAOptions::ModifyCFG));
@@ -633,6 +638,10 @@ PassBuilder::buildFunctionSimplificationPipeline(OptimizationLevel Level,
 
   if (AreStatisticsEnabled())
     FPM.addPass(CountVisitsPass());
+
+  // Optimize stdarg to eliminate unused varargs prior to SROA
+  if (TM)
+    FPM.addPass(OptimizeStdargPass(*TM));
 
   // Form SSA out of local memory accesses after breaking apart aggregates into
   // scalars.

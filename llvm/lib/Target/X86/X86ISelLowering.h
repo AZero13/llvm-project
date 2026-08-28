@@ -854,6 +854,9 @@ namespace llvm {
     SDValue LowerBF16_TO_FP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFP_TO_BF16(SDValue Op, SelectionDAG &DAG) const;
 
+    bool analyzeStdargUsage(const Function &F, unsigned &RequiredGPRs,
+                            unsigned &RequiredFPRs) const override;
+
     SDValue
     LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv, bool isVarArg,
                          const SmallVectorImpl<ISD::InputArg> &Ins,

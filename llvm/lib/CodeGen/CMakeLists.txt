@@ -181,6 +181,7 @@ add_llvm_component_library(LLVMCodeGen
   MacroFusion.cpp
   NonRelocatableStringpool.cpp
   OptimizePHIs.cpp
+  OptimizeStdarg.cpp
   PeepholeOptimizer.cpp
   PHIElimination.cpp
   PHIEliminationUtils.cpp

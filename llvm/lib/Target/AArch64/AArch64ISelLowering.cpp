@@ -9760,6 +9760,111 @@ SDValue AArch64TargetLowering::LowerFormalArguments(
   return Chain;
 }
 
+bool AArch64TargetLowering::analyzeStdargUsage(const Function &F, unsigned &RequiredGPRs,
+                                               unsigned &RequiredFPRs) const {
+  RequiredGPRs = 8;
+  RequiredFPRs = 8;
+
+  const CallInst *VAStart = nullptr;
+  for (const BasicBlock &BB : F) {
+    for (const Instruction &I : BB) {
+      if (const auto *II = dyn_cast<IntrinsicInst>(&I)) {
+        if (II->getIntrinsicID() == Intrinsic::vastart) {
+          if (VAStart) return false;
+          VAStart = II;
+        }
+      }
+    }
+  }
+
+  if (!VAStart)
+    return false;
+
+  const Value *VAList = VAStart->getArgOperand(0);
+  bool UnknownGPRUse = false;
+  bool UnknownFPRUse = false;
+  unsigned TotalGPRs = 0;
+  unsigned TotalFPRs = 0;
+
+  SmallVector<std::pair<const Value *, uint64_t>, 16> Worklist;
+  SmallPtrSet<const Value *, 16> Visited;
+
+  Worklist.push_back({VAList, 0});
+  Visited.insert(VAList);
+
+  while (!Worklist.empty()) {
+    auto [V, CurrentOffset] = Worklist.pop_back_val();
+
+    for (const llvm::User *U : V->users()) {
+      if (const auto *GEP = dyn_cast<GetElementPtrInst>(U)) {
+        APInt Offset(64, 0);
+        if (GEP->accumulateConstantOffset(F.getParent()->getDataLayout(), Offset)) {
+          uint64_t NewOffset = CurrentOffset + Offset.getZExtValue();
+          if (Visited.insert(U).second)
+            Worklist.push_back({U, NewOffset});
+        } else {
+          llvm::errs() << "UnknownFPRUse set by GEP without constant offset: " << *U << "\n";
+          UnknownGPRUse = UnknownFPRUse = true;
+        }
+      } else if (isa<BitCastInst>(U)) {
+        if (Visited.insert(U).second)
+          Worklist.push_back({U, CurrentOffset});
+      } else if (isa<IntrinsicInst>(U)) {
+        // Assume va_start, va_end, lifetime markers don't read the counters
+      } else if (isa<CallInst>(U)) {
+        llvm::errs() << "UnknownFPRUse set by CallInst: " << *U << "\n";
+        UnknownGPRUse = UnknownFPRUse = true;
+      } else if (const auto *Load = dyn_cast<LoadInst>(U)) {
+        if (Load->getType()->isStructTy() || Load->getType()->isArrayTy()) {
+          llvm::errs() << "UnknownFPRUse set by struct/array Load: " << *U << "\n";
+          UnknownGPRUse = UnknownFPRUse = true;
+        } else if (CurrentOffset == 24 || CurrentOffset == 28) {
+          bool FoundICmp = false;
+          for (const llvm::User *LU : Load->users()) {
+            if (auto *ICmp = dyn_cast<ICmpInst>(LU)) {
+              if (ICmp->getPredicate() == CmpInst::ICMP_ULT || ICmp->getPredicate() == CmpInst::ICMP_ULE ||
+                  ICmp->getPredicate() == CmpInst::ICMP_SLT || ICmp->getPredicate() == CmpInst::ICMP_SLE) {
+                if (auto *C = dyn_cast<ConstantInt>(ICmp->getOperand(1))) {
+                  int64_t Limit = C->getSExtValue();
+                  if (ICmp->getPredicate() == CmpInst::ICMP_ULE || ICmp->getPredicate() == CmpInst::ICMP_SLE)
+                    Limit++;
+                  
+                  if (CurrentOffset == 24 && Limit < 0) {
+                    unsigned Bytes = -Limit + 1;
+                    TotalGPRs += (Bytes + 7) / 8;
+                    FoundICmp = true;
+                  } else if (CurrentOffset == 28 && Limit < 0) {
+                    unsigned Bytes = -Limit + 1;
+                    TotalFPRs += (Bytes + 15) / 16;
+                    FoundICmp = true;
+                  }
+                }
+              }
+            }
+          }
+          if (!FoundICmp) {
+            llvm::errs() << "Unknown FPR/GPR use due to missing ICmp on Load: " << *U << "\n";
+            if (CurrentOffset == 24) UnknownGPRUse = true;
+            else UnknownFPRUse = true;
+          }
+        }
+      } else if (const auto *Store = dyn_cast<StoreInst>(U)) {
+        if (Store->getValueOperand() == V || Store->getOperand(0)->getType()->isStructTy() || Store->getOperand(0)->getType()->isArrayTy()) {
+          llvm::errs() << "UnknownFPRUse set by escaping Store: " << *U << "\n";
+          UnknownGPRUse = UnknownFPRUse = true;
+        }
+      } else {
+        llvm::errs() << "UnknownFPRUse set by unknown instruction: " << *U << "\n";
+        UnknownGPRUse = UnknownFPRUse = true;
+      }
+    }
+  }
+
+  RequiredGPRs = UnknownGPRUse ? 8 : std::min(TotalGPRs, 8u);
+  RequiredFPRs = UnknownFPRUse ? 8 : std::min(TotalFPRs, 8u);
+  return true;
+}
+
 void AArch64TargetLowering::saveVarArgRegisters(CCState &CCInfo,
                                                 SelectionDAG &DAG,
                                                 const SDLoc &DL,
@@ -9782,6 +9887,12 @@ void AArch64TargetLowering::saveVarArgRegisters(CCState &CCInfo,
     NumGPRArgRegs = 4;
   }
   unsigned FirstVariadicGPR = CCInfo.getFirstUnallocated(GPRArgRegs);
+
+  if (F.hasFnAttribute("va_list_gpr_size")) {
+    unsigned AttrSize = 0;
+    F.getFnAttribute("va_list_gpr_size").getValueAsString().getAsInteger(10, AttrSize);
+    NumGPRArgRegs = std::min(NumGPRArgRegs, FirstVariadicGPR + AttrSize);
+  }
 
   unsigned GPRSaveSize = 8 * (NumGPRArgRegs - FirstVariadicGPR);
   int GPRIdx = 0;
@@ -9826,8 +9937,14 @@ void AArch64TargetLowering::saveVarArgRegisters(CCState &CCInfo,
 
   if (Subtarget->hasFPARMv8() && !IsWin64) {
     auto FPRArgRegs = AArch64::getFPRArgRegs();
-    const unsigned NumFPRArgRegs = FPRArgRegs.size();
+    unsigned NumFPRArgRegs = FPRArgRegs.size();
     unsigned FirstVariadicFPR = CCInfo.getFirstUnallocated(FPRArgRegs);
+
+    if (F.hasFnAttribute("va_list_fpr_size")) {
+      unsigned AttrSize = 0;
+      F.getFnAttribute("va_list_fpr_size").getValueAsString().getAsInteger(10, AttrSize);
+      NumFPRArgRegs = std::min(NumFPRArgRegs, FirstVariadicFPR + AttrSize);
+    }
 
     unsigned FPRSaveSize = 16 * (NumFPRArgRegs - FirstVariadicFPR);
     int FPRIdx = 0;

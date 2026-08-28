@@ -11,6 +11,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/Analysis/CaptureTracking.h"
+#include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "MCTargetDesc/X86MCAsmInfo.h"
 #include "X86.h"
 #include "X86CallingConv.h"
@@ -26,7 +29,11 @@
 #include "llvm/CodeGen/WinEHFuncInfo.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/IntrinsicsX86.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/PatternMatch.h"
+#include "llvm/IR/Statepoint.h"
+#include "llvm/ADT/SCCIterator.h"
 #include "llvm/Transforms/CFGuard.h"
 
 #define DEBUG_TYPE "x86-isel"
@@ -1590,12 +1597,30 @@ void VarArgsLoweringHelper::createVarArgAreaAndStoreRegisters(
                                          // keeping live input value
     SDValue ALVal; // if applicable keeps SDValue for %al register
 
+    ArrayRef<MCPhysReg> AvailableGPRs = ArgGPRs.slice(NumIntRegs);
+    ArrayRef<MCPhysReg> AvailableXmms = ArgXMMs.slice(NumXMMRegs);
+
+    const Function &F = TheMachineFunction.getFunction();
+    if (!isWin64()) {
+      if (F.hasFnAttribute("va_list_gpr_size")) {
+        unsigned RequiredGPRs = 0;
+        F.getFnAttribute("va_list_gpr_size").getValueAsString().getAsInteger(10, RequiredGPRs);
+        if (RequiredGPRs < AvailableGPRs.size())
+          AvailableGPRs = AvailableGPRs.take_front(RequiredGPRs);
+      }
+      if (F.hasFnAttribute("va_list_fpr_size")) {
+        unsigned RequiredFPRs = 0;
+        F.getFnAttribute("va_list_fpr_size").getValueAsString().getAsInteger(10, RequiredFPRs);
+        if (RequiredFPRs < AvailableXmms.size())
+          AvailableXmms = AvailableXmms.take_front(RequiredFPRs);
+      }
+    }
+
     // Gather all the live in physical registers.
-    for (MCPhysReg Reg : ArgGPRs.slice(NumIntRegs)) {
+    for (MCPhysReg Reg : AvailableGPRs) {
       Register GPR = TheMachineFunction.addLiveIn(Reg, &X86::GR64RegClass);
       LiveGPRs.push_back(DAG.getCopyFromReg(Chain, DL, GPR, MVT::i64));
     }
-    const auto &AvailableXmms = ArgXMMs.slice(NumXMMRegs);
     if (!AvailableXmms.empty()) {
       Register AL = TheMachineFunction.addLiveIn(X86::AL, &X86::GR8RegClass);
       ALVal = DAG.getCopyFromReg(Chain, DL, AL, MVT::i8);
@@ -1708,6 +1733,120 @@ void VarArgsLoweringHelper::lowerVarArgsParameters(SDValue &Chain,
     forwardMustTailParameters(Chain);
 }
 
+bool X86TargetLowering::analyzeStdargUsage(const Function &F, unsigned &RequiredGPRs,
+                                           unsigned &RequiredFPRs) const {
+  if (!Subtarget.is64Bit() || Subtarget.isTargetWin64())
+    return false;
+
+  const IntrinsicInst *VAStart = nullptr;
+  for (const BasicBlock &BB : F) {
+    for (const Instruction &I : BB) {
+      if (auto *II = dyn_cast<IntrinsicInst>(&I)) {
+        if (II->getIntrinsicID() == Intrinsic::vastart) {
+          if (VAStart)
+            return false; // Multiple va_starts, give up
+          VAStart = II;
+        }
+      }
+    }
+  }
+
+  if (!VAStart)
+    return false;
+
+  const Value *VAList = VAStart->getArgOperand(0);
+  const Value *Base = getUnderlyingObject(VAList);
+
+  unsigned TotalGPRs = 0;
+  unsigned TotalFPRs = 0;
+  bool UnknownGPRUse = false;
+  bool UnknownFPRUse = false;
+
+  bool HasLoop = false;
+  for (auto I = scc_begin(&F), E = scc_end(&F); I != E; ++I) {
+    if (I->size() > 1) { HasLoop = true; break; }
+    const BasicBlock *BB = I->front();
+    if (llvm::is_contained(successors(BB), BB)) { HasLoop = true; break; }
+  }
+  if (HasLoop) {
+    UnknownGPRUse = true;
+    UnknownFPRUse = true;
+  }
+
+  SmallVector<std::pair<const Value *, uint64_t>, 8> Worklist;
+  SmallPtrSet<const Value *, 8> Visited;
+  Worklist.push_back({Base, 0});
+  Visited.insert(Base);
+
+  while (!Worklist.empty() && (!UnknownGPRUse || !UnknownFPRUse)) {
+    auto [V, CurrentOffset] = Worklist.pop_back_val();
+    for (const Use &U : V->uses()) {
+      const User *User = U.getUser();
+      if (auto *GEP = dyn_cast<GetElementPtrInst>(User)) {
+        APInt Offset(F.getParent()->getDataLayout().getIndexTypeSizeInBits(GEP->getType()), 0);
+        if (!GEP->accumulateConstantOffset(F.getParent()->getDataLayout(), Offset)) {
+          // Variable offset, be conservative
+          UnknownGPRUse = true;
+          UnknownFPRUse = true;
+        } else {
+          uint64_t NewOffset = CurrentOffset + Offset.getZExtValue();
+          if (Visited.insert(GEP).second)
+            Worklist.push_back({GEP, NewOffset});
+        }
+      } else if (isa<LoadInst>(User) || isa<StoreInst>(User)) {
+        if (auto *Load = dyn_cast<LoadInst>(User)) {
+          if (CurrentOffset == 0 || CurrentOffset == 4) {
+            // Find the icmp ult instruction that checks the offset
+            bool FoundICmp = false;
+            for (const llvm::User *LU : Load->users()) {
+              if (auto *ICmp = dyn_cast<ICmpInst>(LU)) {
+              if (ICmp->getPredicate() == CmpInst::ICMP_ULT || ICmp->getPredicate() == CmpInst::ICMP_ULE) {
+                if (auto *C = dyn_cast<ConstantInt>(ICmp->getOperand(1))) {
+                  uint64_t Limit = C->getZExtValue();
+                  if (ICmp->getPredicate() == CmpInst::ICMP_ULE)
+                    Limit++; // Normalize ULE X to ULT X+1
+                  
+                  // X86-64 ABI: ult gp_offset, 49 - num_gp * 8
+                  if (Limit <= 48) {
+                    unsigned NumGP = (49 - Limit) / 8;
+                    TotalGPRs += NumGP;
+                    FoundICmp = true;
+                  }
+                  // X86-64 ABI: ult fp_offset, 177 - num_fp * 16
+                  else if (Limit >= 48 && Limit <= 176) {
+                      unsigned NumFP = (177 - Limit) / 16;
+                      TotalFPRs += NumFP;
+                      FoundICmp = true;
+                    }
+                  }
+                }
+              }
+            }
+            if (!FoundICmp) {
+              if (CurrentOffset == 0) UnknownGPRUse = true;
+              else UnknownFPRUse = true;
+            }
+          }
+        }
+      } else if (isa<BitCastInst>(User) || isa<AddrSpaceCastInst>(User)) {
+        if (Visited.insert(User).second)
+          Worklist.push_back({User, CurrentOffset});
+      } else if (isa<IntrinsicInst>(User)) {
+        // Assume va_start, va_end, lifetime markers don't read the counters
+      } else {
+        // Unknown use, be conservative
+        UnknownGPRUse = true;
+        UnknownFPRUse = true;
+      }
+    }
+  }
+
+  // Set the required sizes
+  RequiredGPRs = UnknownGPRUse ? 6 : std::min(TotalGPRs, 6u);
+  RequiredFPRs = UnknownFPRUse ? 8 : std::min(TotalFPRs, 8u);
+
+  return true;
+}
 SDValue X86TargetLowering::LowerFormalArguments(
     SDValue Chain, CallingConv::ID CallConv, bool IsVarArg,
     const SmallVectorImpl<ISD::InputArg> &Ins, const SDLoc &dl,

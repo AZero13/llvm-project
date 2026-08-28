@@ -1,0 +1,39 @@
+--- llvm/lib/Target/X86/X86ISelLoweringCall.cpp
++++ llvm/lib/Target/X86/X86ISelLoweringCall.cpp
+@@ -1780,11 +1780,14 @@
+           // Find the icmp ult instruction that checks the offset
+           bool FoundICmp = false;
+           for (const llvm::User *LU : Load->users()) {
++            errs() << "Checking Load user: " << *LU << "\n";
+             if (auto *ICmp = dyn_cast<ICmpInst>(LU)) {
+               if (ICmp->getPredicate() == CmpInst::ICMP_ULT || ICmp->getPredicate() == CmpInst::ICMP_ULE) {
+                 if (auto *C = dyn_cast<ConstantInt>(ICmp->getOperand(1))) {
+                   uint64_t Limit = C->getZExtValue();
++                  errs() << "Found ICmp Limit: " << Limit << " pred: " << ICmp->getPredicate() << "\n";
+                   if (ICmp->getPredicate() == CmpInst::ICMP_ULE)
+                     Limit++; // Normalize ULE X to ULT X+1
+                   
+@@ -1792,6 +1795,7 @@
+                   if (Limit <= 48) {
+                     unsigned NumGP = (49 - Limit) / 8;
+                     TotalGPRs += NumGP;
++                    errs() << "Added " << NumGP << " GPRs\n";
+                     FoundICmp = true;
+                   }
+                   // X86-64 ABI: ult fp_offset, 305 - num_fp * 16
+@@ -1805,6 +1809,7 @@
+             }
+           }
+           if (!FoundICmp) {
++            errs() << "No ICmp found! UnknownGPRUse = true\n";
+             UnknownGPRUse = true;
+             UnknownFPRUse = true;
+           }
+@@ -1820,6 +1825,7 @@
+   }
+ 
+   // Set the required sizes
++  errs() << "TotalGPRs: " << TotalGPRs << " Unknown: " << UnknownGPRUse << "\n";
+   RequiredGPRs = UnknownGPRUse ? 6 : std::min(TotalGPRs, 6u);
+   RequiredFPRs = UnknownFPRUse ? 8 : std::min(TotalFPRs, 8u);
+ 

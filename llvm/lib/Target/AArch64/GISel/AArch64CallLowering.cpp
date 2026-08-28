@@ -628,6 +628,17 @@ void AArch64CallLowering::saveVarArgRegisters(
   unsigned NumVariadicGPRArgRegs = GPRArgRegs.size() - FirstVariadicGPR + 1;
 
   unsigned GPRSaveSize = 8 * (GPRArgRegs.size() - FirstVariadicGPR);
+
+  if (MF.getFunction().hasFnAttribute("va_list_gpr_size")) {
+    unsigned RequiredGPRs;
+    MF.getFunction()
+        .getFnAttribute("va_list_gpr_size")
+        .getValueAsString()
+        .getAsInteger(10, RequiredGPRs);
+    if (RequiredGPRs == 0)
+      GPRSaveSize = 0;
+  }
+
   int GPRIdx = 0;
   if (GPRSaveSize != 0) {
     if (IsWin64CC) {
@@ -667,6 +678,17 @@ void AArch64CallLowering::saveVarArgRegisters(
     unsigned FirstVariadicFPR = CCInfo.getFirstUnallocated(FPRArgRegs);
 
     unsigned FPRSaveSize = 16 * (FPRArgRegs.size() - FirstVariadicFPR);
+
+    if (MF.getFunction().hasFnAttribute("va_list_fpr_size")) {
+      unsigned RequiredFPRs;
+      MF.getFunction()
+          .getFnAttribute("va_list_fpr_size")
+          .getValueAsString()
+          .getAsInteger(10, RequiredFPRs);
+      if (RequiredFPRs == 0)
+        FPRSaveSize = 0;
+    }
+
     int FPRIdx = 0;
     if (FPRSaveSize != 0) {
       FPRIdx = MFI.CreateStackObject(FPRSaveSize, Align(16), false);

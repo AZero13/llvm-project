@@ -1,0 +1,8 @@
+Checking Load user:   %1 = zext nneg i32 %gp_offset to i64
+Checking Load user:   %fits_in_gp = icmp ult i32 %gp_offset, 41
+Found ICmp Limit: 41, Added 1 GPRs
+Checking Load user:   %3 = add nuw nsw i32 %gp_offset, 8
+Checking Load user:   %vaarg.addr = phi ptr [ %2, %vaarg.in_reg ], [ %overflow_arg_area, %vaarg.in_mem ]
+Checking Load user:   %overflow_arg_area.next = getelementptr i8, ptr %overflow_arg_area, i64 8
+No ICmp found for Load! UnknownGPRUse = true
+TotalGPRs: 1 Unknown: 1 HasLoop: 0
