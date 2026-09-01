@@ -11,16 +11,13 @@ define i32 @parity_of_add_i8(i32 %a, i32 %b, ptr %out) nounwind {
 ; X86-NEXT:    movl {{[0-9]+}}(%esp), %ecx
 ; X86-NEXT:    movl {{[0-9]+}}(%esp), %eax
 ; X86-NEXT:    addl {{[0-9]+}}(%esp), %eax
-; X86-NEXT:    testb %al, %al
 ; X86-NEXT:    setnp (%ecx)
 ; X86-NEXT:    retl
 ;
 ; X64-LABEL: parity_of_add_i8:
 ; X64:       # %bb.0:
-; X64-NEXT:    # kill: def $esi killed $esi def $rsi
-; X64-NEXT:    # kill: def $edi killed $edi def $rdi
-; X64-NEXT:    leal (%rdi,%rsi), %eax
-; X64-NEXT:    testb %al, %al
+; X64-NEXT:    movl %edi, %eax
+; X64-NEXT:    addl %esi, %eax
 ; X64-NEXT:    setnp (%rdx)
 ; X64-NEXT:    retq
   %add = add i32 %a, %b
@@ -37,7 +34,6 @@ define i32 @parity_of_sub_i8(i32 %a, i32 %b, ptr %out) nounwind {
 ; X86-NEXT:    movl {{[0-9]+}}(%esp), %ecx
 ; X86-NEXT:    movl {{[0-9]+}}(%esp), %eax
 ; X86-NEXT:    subl {{[0-9]+}}(%esp), %eax
-; X86-NEXT:    testb %al, %al
 ; X86-NEXT:    setnp (%ecx)
 ; X86-NEXT:    retl
 ;
@@ -45,7 +41,6 @@ define i32 @parity_of_sub_i8(i32 %a, i32 %b, ptr %out) nounwind {
 ; X64:       # %bb.0:
 ; X64-NEXT:    movl %edi, %eax
 ; X64-NEXT:    subl %esi, %eax
-; X64-NEXT:    testb %al, %al
 ; X64-NEXT:    setnp (%rdx)
 ; X64-NEXT:    retq
   %sub = sub i32 %a, %b
@@ -62,7 +57,6 @@ define i32 @parity_of_xor_i8(i32 %a, i32 %b, ptr %out) nounwind {
 ; X86-NEXT:    movl {{[0-9]+}}(%esp), %ecx
 ; X86-NEXT:    movl {{[0-9]+}}(%esp), %eax
 ; X86-NEXT:    xorl {{[0-9]+}}(%esp), %eax
-; X86-NEXT:    testb %al, %al
 ; X86-NEXT:    setnp (%ecx)
 ; X86-NEXT:    retl
 ;
@@ -70,7 +64,6 @@ define i32 @parity_of_xor_i8(i32 %a, i32 %b, ptr %out) nounwind {
 ; X64:       # %bb.0:
 ; X64-NEXT:    movl %edi, %eax
 ; X64-NEXT:    xorl %esi, %eax
-; X64-NEXT:    testb %al, %al
 ; X64-NEXT:    setnp (%rdx)
 ; X64-NEXT:    retq
   %xor = xor i32 %a, %b
@@ -87,7 +80,6 @@ define i32 @parity_of_and_i8(i32 %a, i32 %b, ptr %out) nounwind {
 ; X86-NEXT:    movl {{[0-9]+}}(%esp), %ecx
 ; X86-NEXT:    movl {{[0-9]+}}(%esp), %eax
 ; X86-NEXT:    andl {{[0-9]+}}(%esp), %eax
-; X86-NEXT:    testb %al, %al
 ; X86-NEXT:    setnp (%ecx)
 ; X86-NEXT:    retl
 ;
@@ -95,7 +87,6 @@ define i32 @parity_of_and_i8(i32 %a, i32 %b, ptr %out) nounwind {
 ; X64:       # %bb.0:
 ; X64-NEXT:    movl %edi, %eax
 ; X64-NEXT:    andl %esi, %eax
-; X64-NEXT:    testb %al, %al
 ; X64-NEXT:    setnp (%rdx)
 ; X64-NEXT:    retq
   %and = and i32 %a, %b
@@ -112,7 +103,6 @@ define i32 @parity_of_or_i8(i32 %a, i32 %b, ptr %out) nounwind {
 ; X86-NEXT:    movl {{[0-9]+}}(%esp), %ecx
 ; X86-NEXT:    movl {{[0-9]+}}(%esp), %eax
 ; X86-NEXT:    orl {{[0-9]+}}(%esp), %eax
-; X86-NEXT:    testb %al, %al
 ; X86-NEXT:    setnp (%ecx)
 ; X86-NEXT:    retl
 ;
@@ -120,7 +110,6 @@ define i32 @parity_of_or_i8(i32 %a, i32 %b, ptr %out) nounwind {
 ; X64:       # %bb.0:
 ; X64-NEXT:    movl %edi, %eax
 ; X64-NEXT:    orl %esi, %eax
-; X64-NEXT:    testb %al, %al
 ; X64-NEXT:    setnp (%rdx)
 ; X64-NEXT:    retq
   %or = or i32 %a, %b

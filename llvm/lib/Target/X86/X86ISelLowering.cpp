@@ -33847,6 +33847,51 @@ static SDValue LowerPARITY(SDValue Op, const X86Subtarget &Subtarget,
   // Special case. If the input fits in 8-bits we can use a single 8-bit TEST.
   if (VT == MVT::i8 || DAG.computeKnownBits(X).countMaxActiveBits() <= 8) {
     X = DAG.getNode(ISD::TRUNCATE, DL, MVT::i8, X);
+
+    // Try to fold parity into a preceding arithmetic operation. The x86 parity
+    // flag is always computed from the low byte of the result regardless of
+    // operand size, so we can look through truncates and reuse flags from a
+    // wider operation (e.g. a 32-bit ADD's PF == parity of low byte).
+    SDValue Src = X;
+    while (Src.getOpcode() == ISD::TRUNCATE)
+      Src = Src.getOperand(0);
+
+    // If the source is already a flag-producing X86ISD op, reuse its flags.
+    switch (Src.getOpcode()) {
+    case X86ISD::ADD:
+    case X86ISD::SUB:
+    case X86ISD::AND:
+    case X86ISD::OR:
+    case X86ISD::XOR: {
+      SDValue Flags = SDValue(Src.getNode(), 1);
+      SDValue Setnp = getSETCC(X86::COND_NP, Flags, DL, DAG);
+      return DAG.getNode(ISD::ZERO_EXTEND, DL, VT, Setnp);
+    }
+    default:
+      break;
+    }
+
+    // Try to convert an ISD arithmetic op to its X86ISD flag-producing variant.
+    unsigned X86Opc = 0;
+    switch (Src.getOpcode()) {
+    case ISD::ADD: X86Opc = X86ISD::ADD; break;
+    case ISD::SUB: X86Opc = X86ISD::SUB; break;
+    case ISD::AND: X86Opc = X86ISD::AND; break;
+    case ISD::OR:  X86Opc = X86ISD::OR;  break;
+    case ISD::XOR: X86Opc = X86ISD::XOR; break;
+    default: break;
+    }
+
+    if (X86Opc) {
+      SDVTList ArithVTs = DAG.getVTList(Src.getValueType(), MVT::i32);
+      SDValue ArithOp = DAG.getNode(X86Opc, DL, ArithVTs, Src.getOperand(0),
+                                    Src.getOperand(1));
+      DAG.ReplaceAllUsesOfValueWith(Src, ArithOp);
+      SDValue Flags = ArithOp.getValue(1);
+      SDValue Setnp = getSETCC(X86::COND_NP, Flags, DL, DAG);
+      return DAG.getNode(ISD::ZERO_EXTEND, DL, VT, Setnp);
+    }
+
     SDValue Flags = DAG.getNode(X86ISD::CMP, DL, MVT::i32, X,
                                 DAG.getConstant(0, DL, MVT::i8));
     // Copy the inverse of the parity flag into a register with setcc.
