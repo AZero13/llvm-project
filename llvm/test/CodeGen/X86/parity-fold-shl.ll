@@ -7,8 +7,7 @@ define i32 @shl_test_bit_to_parity(i32 %a, i32 %b) nounwind {
 ; X86:       # %bb.0:
 ; X86-NEXT:    movl {{[0-9]+}}(%esp), %eax
 ; X86-NEXT:    shll $7, %eax
-; X86-NEXT:    testb %al, %al
-; X86-NEXT:    js .LBB0_2
+; X86-NEXT:    jnp .LBB0_2
 ; X86-NEXT:  # %bb.1:
 ; X86-NEXT:    movl {{[0-9]+}}(%esp), %eax
 ; X86-NEXT:  .LBB0_2:
@@ -18,8 +17,7 @@ define i32 @shl_test_bit_to_parity(i32 %a, i32 %b) nounwind {
 ; X64:       # %bb.0:
 ; X64-NEXT:    movl %edi, %eax
 ; X64-NEXT:    shll $7, %eax
-; X64-NEXT:    testb %al, %al
-; X64-NEXT:    cmovnsl %esi, %eax
+; X64-NEXT:    cmovpl %esi, %eax
 ; X64-NEXT:    retq
   %shl = shl i32 %a, 7
   %and = and i32 %shl, 128

@@ -49309,6 +49309,51 @@ static SDValue combineSetCCAtomicArith(SDValue Cmp, X86::CondCode &CC,
 
 // Check whether we're just testing the signbit, and whether we can simplify
 // this by tracking where the signbit came from.
+// Look for a test of a single bit in the lowest byte that can be evaluated
+// using the parity flag.
+// (cmp (trunc (shl X, C)), 0) where C == 7 -> tests bit 7.
+// If the shift amount is 7, the low byte of the shift result is exactly
+// (X & 1) << 7. Its parity is odd if bit 7 is set, and even if bit 7 is clear.
+// We can replace the 8-bit sign test with a 32-bit (or larger) test of the
+// shift result using COND_NP / COND_P. The redundant TEST instruction will be
+// eliminated by peephole-opt.
+static SDValue checkBitTestToParitySetCCCombine(SDValue Cmp, X86::CondCode &CC,
+                                                SelectionDAG &DAG) {
+  if (CC != X86::COND_S && CC != X86::COND_NS && CC != X86::COND_E &&
+      CC != X86::COND_NE)
+    return SDValue();
+
+  if (Cmp.getOpcode() != X86ISD::CMP || !isNullConstant(Cmp.getOperand(1)))
+    return SDValue();
+
+  SDValue Src = Cmp.getOperand(0);
+
+  // We are looking for an 8-bit test.
+  if (Src.getOpcode() != ISD::TRUNCATE || Src.getValueType() != MVT::i8)
+    return SDValue();
+
+  SDValue Shl = Src.getOperand(0);
+  if (Shl.getOpcode() != ISD::SHL)
+    return SDValue();
+
+  auto *ShAmtC = dyn_cast<ConstantSDNode>(Shl.getOperand(1));
+  if (!ShAmtC || ShAmtC->getZExtValue() != 7)
+    return SDValue();
+
+  // For COND_S (sign bit set) or COND_NE (not equal to 0), the bit is 1.
+  // For COND_NS (sign bit clear) or COND_E (equal to 0), the bit is 0.
+  bool IsSet = (CC == X86::COND_S || CC == X86::COND_NE);
+
+  // If the bit is set, the low byte is 0x80 (parity odd, NP).
+  // If the bit is clear, the low byte is 0x00 (parity even, P).
+  CC = IsSet ? X86::COND_NP : X86::COND_P;
+
+  // Return CMP(SHL(X, 7), 0). The TEST instruction will be eliminated later.
+  SDLoc DL(Cmp);
+  return DAG.getNode(X86ISD::CMP, DL, MVT::i32, Shl,
+                     DAG.getConstant(0, DL, Shl.getValueType()));
+}
+
 static SDValue checkSignTestSetCCCombine(SDValue Cmp, X86::CondCode &CC,
                                          SelectionDAG &DAG) {
   if (CC != X86::COND_S && CC != X86::COND_NS)
@@ -50045,6 +50090,9 @@ static SDValue combineSetCCEFLAGS(SDValue EFLAGS, X86::CondCode &CC,
   if (CC == X86::COND_B)
     if (SDValue Flags = combineCarryThroughADD(EFLAGS, DAG))
       return Flags;
+
+  if (SDValue R = checkBitTestToParitySetCCCombine(EFLAGS, CC, DAG))
+    return R;
 
   if (SDValue R = checkSignTestSetCCCombine(EFLAGS, CC, DAG))
     return R;
