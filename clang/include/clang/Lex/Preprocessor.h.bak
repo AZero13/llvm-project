@@ -2053,7 +2053,7 @@ public:
   /// Determine whether it's possible for a future call to Lex to produce an
   /// annotation token created by a previous call to EnterAnnotationToken.
   bool mightHavePendingAnnotationTokens() {
-    return CurLexerCallback != CLK_Lexer || CachedLexPos < CachedTokens.size();
+    return CurLexerCallback != CLK_Lexer;
   }
 
   /// Update the current token to represent the provided
