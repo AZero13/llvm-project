@@ -20046,6 +20046,14 @@ static SDValue performSETCCCombine(SDNode *N,
       unsigned ShiftBits = llvm::countr_zero(AndRHSInt);
       int64_t NewC = SignExtend64<32>(N1Int) >> ShiftBits;
       if (NewC >= -2048 && NewC <= 2048) {
+        // If ShiftBits is 0 and the sign bit of X is known zero, DAGCombiner
+        // will fold SIGN_EXTEND_INREG back to AND, causing an infinite loop.
+        if (ShiftBits == 0 &&
+            DAG.MaskedValueIsZero(
+                N0.getOperand(0),
+                APInt::getOneBitSet(OpVT.getScalarSizeInBits(), 31)))
+          return SDValue();
+
         SDValue SExt =
             DAG.getNode(ISD::SIGN_EXTEND_INREG, dl, OpVT, N0.getOperand(0),
                         DAG.getValueType(MVT::i32));
