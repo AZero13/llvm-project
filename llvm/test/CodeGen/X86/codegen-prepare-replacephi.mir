@@ -1,4 +1,4 @@
-# RUN: llc -run-pass=codegenprepare -o - %s | FileCheck %s
+# RUN: llc -run-pass=codegenprepare -mtriple=x86_64-unknown-linux-gnu -o - %s | FileCheck %s
 
 # REQUIRES: default_triple
 
